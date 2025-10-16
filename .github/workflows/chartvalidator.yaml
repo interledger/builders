@@ -1,6 +1,7 @@
 name: Build and Push Chart Validator
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
