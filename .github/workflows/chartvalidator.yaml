@@ -1,0 +1,55 @@
+name: Build and Push Chart Validator
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'chartvalidator/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'chartvalidator/**'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: interledger/builders/chartvalidator
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        # Only login if we're going to push (on main branch)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./chartvalidator
+          # Only push on main branch (PR merge), otherwise just build
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
