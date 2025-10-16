@@ -24,6 +24,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
+      attestations: write
 
     steps:
       - name: Checkout repository
@@ -31,11 +33,11 @@ jobs:
 
       - name: Log in to Container Registry
         uses: docker/login-action@v3
-        # Only login if we're going to push (on main branch)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        # Only login if we're going to push (matches the push condition)
+        if: (github.ref == 'refs/heads/main') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
+          username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata
