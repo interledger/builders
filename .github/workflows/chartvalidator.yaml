@@ -45,6 +45,9 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest
+          labels: |
+            org.opencontainers.image.description=Chart validator tool for Interledger
+            org.opencontainers.image.vendor=Interledger Foundation
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
