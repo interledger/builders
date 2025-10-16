@@ -1,5 +1,7 @@
 FROM golang:1.25-alpine
 
+WORKDIR /root
+
 RUN apk add --no-cache curl bash
 
 # Install python3 and pip
@@ -16,16 +18,22 @@ RUN curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/
 RUN chmod +x install_kustomize.sh
 RUN ./install_kustomize.sh /usr/local/bin
 
+# Make should also be available
+RUN apk add --no-cache make
+
+# Install docker client
+RUN apk add --no-cache docker-cli
+
+RUN mkdir /googlesdk
+WORKDIR /googlesdk
+
 # As described https://cloud.google.com/sdk/docs/install
 RUN curl -O https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz
 RUN tar -xvf google-cloud-cli-linux-x86_64.tar.gz
 RUN ./google-cloud-sdk/install.sh --quiet
 RUN ./google-cloud-sdk/bin/gcloud components install kubectl
 
-# Make should also be available
-RUN apk add --no-cache make
-
-# Install docker client
-RUN apk add --no-cache docker-cli
+# Add gcloud bin to PATH
+ENV PATH="/googlesdk/google-cloud-sdk/bin:${PATH}"
 
 WORKDIR /app
