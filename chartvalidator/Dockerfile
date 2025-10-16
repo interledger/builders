@@ -25,4 +25,7 @@ RUN ./google-cloud-sdk/bin/gcloud components install kubectl
 # Make should also be available
 RUN apk add --no-cache make
 
+# Install docker client
+RUN apk add --no-cache docker-cli
+
 WORKDIR /app
