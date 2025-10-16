@@ -22,4 +22,7 @@ RUN tar -xvf google-cloud-cli-linux-x86_64.tar.gz
 RUN ./google-cloud-sdk/install.sh --quiet
 RUN ./google-cloud-sdk/bin/gcloud components install kubectl
 
+# Make should also be available
+RUN apk add --no-cache make
+
 WORKDIR /app
