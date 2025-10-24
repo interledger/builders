@@ -5,9 +5,24 @@
   "type": "module",
   "scripts": {
     "detect-changes": "node detect-changes.js",
-    "test": "node test.js"
+    "fetch-tags": "node image-tags.js",
+    "parse-commit": "node versioning.js",
+    "calculate-version": "node version-calculator.js",
+    "validate-commits": "node validate-commits.js",
+    "generate-tags": "node docker-tags.js",
+    "test": "node test.js && node test-image-tags.js && node test-versioning.js && node test-docker-tags.js",
+    "test:changes": "node test.js",
+    "test:tags": "node test-image-tags.js",
+    "test:versioning": "node test-versioning.js",
+    "test:docker-tags": "node test-docker-tags.js"
   },
-  "keywords": ["builders", "docker", "ci"],
+  "keywords": [
+    "builders",
+    "docker",
+    "ci",
+    "versioning",
+    "conventional-commits"
+  ],
   "author": "Interledger Foundation",
   "license": "Apache-2.0"
 }
