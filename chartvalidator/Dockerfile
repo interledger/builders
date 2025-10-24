@@ -22,6 +22,10 @@ RUN ./get_helm.sh
 # Install kustomize
 RUN curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" -o install_kustomize.sh
 
+# Install kubeconform form alpine
+RUN curl -sSL "https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64" -o /usr/local/bin/kubeconform \
+    && chmod +x /usr/local/bin/kubeconform
+
 RUN chmod +x install_kustomize.sh
 RUN ./install_kustomize.sh /usr/local/bin
 
