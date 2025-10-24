@@ -1,0 +1,123 @@
+---
+# Source: ilf-wallet-admin/templates/pdb.server.yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    app.kubernetes.io/instance: wallet-admin
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: wallet-admin-server
+    app.kubernetes.io/version: v1.2.16
+    helm.sh/chart: ilf-wallet-admin-2.1.1
+  name: wallet-admin-server
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: wallet-admin
+      app.kubernetes.io/name: wallet-admin-server
+---
+# Source: ilf-wallet-admin/templates/configMap.yaml
+apiVersion: v1
+data:
+  BACKEND_GRPC_URL: wallet-backend-service-grpc:8448
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/instance: wallet-admin
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: wallet-admin-config
+    app.kubernetes.io/version: v1.2.16
+    helm.sh/chart: ilf-wallet-admin-2.1.1
+  name: wallet-admin-config
+---
+# Source: ilf-wallet-admin/templates/service.http.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  annotations: null
+  labels:
+    app.kubernetes.io/instance: wallet-admin
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: wallet-admin-service
+    app.kubernetes.io/version: v1.2.16
+    helm.sh/chart: ilf-wallet-admin-2.1.1
+  name: wallet-admin-service
+spec:
+  ports:
+  - name: http
+    port: 3000
+    protocol: TCP
+    targetPort: 3000
+  selector:
+    app.kubernetes.io/instance: wallet-admin
+    app.kubernetes.io/name: wallet-admin-server
+  type: ClusterIP
+---
+# Source: ilf-wallet-admin/templates/deployment.server.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/instance: wallet-admin
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: wallet-admin-server
+    app.kubernetes.io/version: v1.2.16
+    helm.sh/chart: ilf-wallet-admin-2.1.1
+  name: wallet-admin-server
+spec:
+  replicas: 2  
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: wallet-admin
+      app.kubernetes.io/name: wallet-admin-server
+  template:
+    metadata:
+      annotations:
+        ilf-configmap-worker-sha256: f980bf57425d2aa2920a40909aa1a3a8e639c3fa332b0c92292737793bbbbcc8
+      labels:
+        app.kubernetes.io/instance: wallet-admin
+        app.kubernetes.io/name: wallet-admin-server
+    spec:
+      automountServiceAccountToken: true
+      containers:
+      - envFrom:
+        - configMapRef:
+            name: wallet-admin-config
+        image: europe-west4-docker.pkg.dev/wallet-dev-462809/interledger-app/botanist:v1.3.2-canary
+        imagePullPolicy: Always
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: server
+        ports:
+        - containerPort: 3000
+          name: http
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 1024Mi
+          requests:
+            cpu: 50m
+            memory: 128Mi
+        securityContext: null
+      securityContext: null
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
