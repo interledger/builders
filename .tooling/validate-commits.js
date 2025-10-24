@@ -11,15 +11,22 @@ import { execSync } from 'child_process';
 /**
  * Get commit messages from git
  * @param {string} [baseRef] - Base reference to compare against (defaults to HEAD~1)
+ * @param {boolean} [onlyLast=false] - Only get the last commit
  * @returns {Array<{sha: string, message: string}>}
  */
-function getCommitMessages(baseRef = 'HEAD~1') {
+function getCommitMessages(baseRef = 'HEAD~1', onlyLast = false) {
   try {
-    // Get commit SHAs and messages
-    const output = execSync(
-      `git log ${baseRef}..HEAD --format=%H%n%s%n%b%n---COMMIT---`,
-      { encoding: 'utf8' }
-    );
+    let command;
+    
+    if (onlyLast) {
+      // Get only the last commit
+      command = 'git log -1 --format=%H%n%s%n%b%n---COMMIT---';
+    } else {
+      // Get commit SHAs and messages in range
+      command = `git log ${baseRef}..HEAD --format=%H%n%s%n%b%n---COMMIT---`;
+    }
+    
+    const output = execSync(command, { encoding: 'utf8' });
     
     const commits = [];
     const parts = output.split('---COMMIT---').filter(Boolean);
@@ -86,10 +93,12 @@ function validateCommit(message) {
  * @param {Object} options
  * @param {string} [options.baseRef] - Base reference for comparison
  * @param {string} [options.message] - Single message to validate (instead of git log)
+ * @param {boolean} [options.onlyLast=true] - Only validate the last commit (default: true)
  * @returns {Promise<{success: boolean, errors: Array}>}
  */
 export async function validateCommits(options = {}) {
   const errors = [];
+  const onlyLast = options.onlyLast !== false; // Default to true
   
   if (options.message) {
     // Validate single message
@@ -103,14 +112,18 @@ export async function validateCommits(options = {}) {
   } else {
     // Validate commits from git
     const baseRef = options.baseRef || process.env.BASE_REF || 'HEAD~1';
-    const commits = getCommitMessages(baseRef);
+    const commits = getCommitMessages(baseRef, onlyLast);
     
     if (commits.length === 0) {
       console.warn('No commits found to validate');
       return { success: true, errors: [] };
     }
     
-    console.log(`Validating ${commits.length} commit(s)...\n`);
+    if (onlyLast) {
+      console.log('Validating last commit...\n');
+    } else {
+      console.log(`Validating ${commits.length} commit(s)...\n`);
+    }
     
     for (const commit of commits) {
       const result = validateCommit(commit.message);
@@ -146,14 +159,18 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     console.log('Options:');
     console.log('  --base-ref <ref>    Base git reference to compare against (default: HEAD~1)');
     console.log('  --message <msg>     Validate a single message instead of git commits');
+    console.log('  --last              Only validate the last commit (default)');
+    console.log('  --all               Validate all commits in range');
     console.log('  --help, -h          Show this help message');
     console.log('');
     console.log('Environment Variables:');
     console.log('  BASE_REF            Base reference (used if --base-ref not provided)');
     console.log('');
     console.log('Examples:');
-    console.log('  node validate-commits.js');
-    console.log('  node validate-commits.js --base-ref origin/main');
+    console.log('  node validate-commits.js                          # Validate last commit');
+    console.log('  node validate-commits.js --last                   # Validate last commit (explicit)');
+    console.log('  node validate-commits.js --all                    # Validate all commits since base');
+    console.log('  node validate-commits.js --all --base-ref origin/main');
     console.log('  node validate-commits.js --message "feat: add feature"');
     console.log('');
     console.log('Exit codes:');
@@ -165,6 +182,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   // Parse arguments
   let baseRef = null;
   let message = null;
+  let onlyLast = true; // Default to only validating last commit
   
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--base-ref' && i + 1 < args.length) {
@@ -173,11 +191,15 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     } else if (args[i] === '--message' && i + 1 < args.length) {
       message = args[i + 1];
       i++;
+    } else if (args[i] === '--last') {
+      onlyLast = true;
+    } else if (args[i] === '--all') {
+      onlyLast = false;
     }
   }
   
   try {
-    const result = await validateCommits({ baseRef, message });
+    const result = await validateCommits({ baseRef, message, onlyLast });
     
     console.log('');
     console.log('='.repeat(60));

@@ -31,7 +31,8 @@ jobs:
           BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
           cd .tooling
-          node validate-commits.js --base-ref "$BASE_REF"
+          # By default, only validates the last commit
+          node validate-commits.js
 
   detect-changes:
     needs: validate-commits
@@ -90,6 +91,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
       - name: Log in to Container Registry
         uses: docker/login-action@v3
@@ -99,17 +107,67 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Determine version and tags
+        id: version
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd .tooling
+          
+          # Get latest commit message for this folder
+          COMMIT_MSG=$(git log -1 --format=%s -- "../${{ matrix.folder }}")
+          echo "Commit message: $COMMIT_MSG"
+          
+          # Calculate next version
+          IMAGE_NAME="interledger/builders/${{ matrix.folder }}"
+          
+          # Determine version (this will fetch from registry or create initial)
+          echo "Calculating version for $IMAGE_NAME..."
+          VERSION_OUTPUT=$(node version-calculator.js "$IMAGE_NAME" "$COMMIT_MSG" 2>&1)
+          
+          echo "$VERSION_OUTPUT"
+          
+          # Extract version from output (look for "Next:" line)
+          NEXT_VERSION=$(echo "$VERSION_OUTPUT" | grep "Next:" | awk '{print $2}')
+          
+          if [ -z "$NEXT_VERSION" ]; then
+            echo "Could not determine version, using v0.1.0"
+            NEXT_VERSION="v0.1.0"
+          fi
+          
+          echo "next-version=$NEXT_VERSION" >> $GITHUB_OUTPUT
+          echo "Calculated version: $NEXT_VERSION"
+          
+          # Generate all tags using docker-tags module
+          echo "Generating tags..."
+          TAG_OUTPUT=$(node docker-tags.js generate "$NEXT_VERSION")
+          echo "$TAG_OUTPUT"
+          
+          # Parse JSON output to get individual tags
+          FULL_TAG=$(echo "$TAG_OUTPUT" | jq -r '.full')
+          MINOR_TAG=$(echo "$TAG_OUTPUT" | jq -r '.minor')
+          MAJOR_TAG=$(echo "$TAG_OUTPUT" | jq -r '.major')
+          
+          echo "full-tag=$FULL_TAG" >> $GITHUB_OUTPUT
+          echo "minor-tag=$MINOR_TAG" >> $GITHUB_OUTPUT
+          echo "major-tag=$MAJOR_TAG" >> $GITHUB_OUTPUT
+          
+          echo "Tags: $FULL_TAG, $MINOR_TAG, $MAJOR_TAG, latest"
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/interledger/builders/${{ matrix.folder }}
           tags: |
+            type=raw,value=${{ steps.version.outputs.full-tag }}
+            type=raw,value=${{ steps.version.outputs.minor-tag }}
+            type=raw,value=${{ steps.version.outputs.major-tag }}
             type=raw,value=latest
-            type=sha,prefix={{branch}}-
           labels: |
             org.opencontainers.image.description=Builder tool: ${{ matrix.folder }}
             org.opencontainers.image.vendor=Interledger Foundation
+            org.opencontainers.image.version=${{ steps.version.outputs.next-version }}
 
       - name: Build Docker image
         uses: docker/build-push-action@v5

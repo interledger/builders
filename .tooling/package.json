@@ -9,10 +9,12 @@
     "parse-commit": "node versioning.js",
     "calculate-version": "node version-calculator.js",
     "validate-commits": "node validate-commits.js",
-    "test": "node test.js && node test-image-tags.js && node test-versioning.js",
+    "generate-tags": "node docker-tags.js",
+    "test": "node test.js && node test-image-tags.js && node test-versioning.js && node test-docker-tags.js",
     "test:changes": "node test.js",
     "test:tags": "node test-image-tags.js",
-    "test:versioning": "node test-versioning.js"
+    "test:versioning": "node test-versioning.js",
+    "test:docker-tags": "node test-docker-tags.js"
   },
   "keywords": [
     "builders",
