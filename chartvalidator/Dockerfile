@@ -1,6 +1,13 @@
-FROM golang:1.25-alpine
+FROM golang:1.25-alpine AS checkerbuild
 
 WORKDIR /root
+
+COPY checker /root/checker
+WORKDIR /root/checker
+RUN go test .
+RUN go build -o chart-checker .
+
+FROM alpine:3.22
 
 RUN apk add --no-cache curl bash
 
@@ -24,16 +31,16 @@ RUN apk add --no-cache make
 # Install docker client
 RUN apk add --no-cache docker-cli
 
-RUN mkdir /googlesdk
-WORKDIR /googlesdk
+# Install docker-credential-gcr for Google Artifact Registry authentication
+# This is much lighter (~20MB) than full gcloud SDK (~1GB+)
+RUN curl -fsSL "https://github.com/GoogleCloudPlatform/docker-credential-gcr/releases/download/v2.1.26/docker-credential-gcr_linux_amd64-2.1.26.tar.gz" | tar xz -C /usr/local/bin docker-credential-gcr \
+    && chmod +x /usr/local/bin/docker-credential-gcr
 
-# As described https://cloud.google.com/sdk/docs/install
-RUN curl -O https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz
-RUN tar -xvf google-cloud-cli-linux-x86_64.tar.gz
-RUN ./google-cloud-sdk/install.sh --quiet
-RUN ./google-cloud-sdk/bin/gcloud components install kubectl
+# Configure docker to use the GCR credential helper
+RUN mkdir -p /root/.docker \
+    && echo '{"credHelpers":{"gcr.io":"gcr","us-docker.pkg.dev":"gcr","europe-docker.pkg.dev":"gcr","asia-docker.pkg.dev":"gcr"}}' > /root/.docker/config.json
 
-# Add gcloud bin to PATH
-ENV PATH="/googlesdk/google-cloud-sdk/bin:${PATH}"
+# Copy chart-checker from the builder stage
+COPY --from=checkerbuild /root/checker/chart-checker /usr/local/bin/chart-checker
 
 WORKDIR /app
