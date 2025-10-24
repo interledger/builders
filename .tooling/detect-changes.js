@@ -89,13 +89,28 @@ function filterChangedFolders(allFolders, changedFiles) {
 }
 
 /**
+ * Find the git repository root
+ * @returns {string}
+ */
+function getRepoRoot() {
+  try {
+    return execSync('git rev-parse --show-toplevel', { encoding: 'utf8' }).trim();
+  } catch (error) {
+    console.error('Failed to find git repository root');
+    throw error;
+  }
+}
+
+/**
  * Main execution
  */
 async function main() {
   const args = process.argv.slice(2);
   const mode = args[0] || 'detect';
   
-  const rootDir = process.cwd();
+  // Always use the git repository root, not the current working directory
+  // This ensures the script works correctly even when run from subdirectories
+  const rootDir = getRepoRoot();
   
   // Get all buildable folders
   const allFolders = await getBuildableFolders(rootDir);
