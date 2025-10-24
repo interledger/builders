@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "detect-changes": "node detect-changes.js",
-    "test": "node test.js"
+    "fetch-tags": "node image-tags.js",
+    "test": "node test.js && node test-image-tags.js",
+    "test:changes": "node test.js",
+    "test:tags": "node test-image-tags.js"
   },
   "keywords": ["builders", "docker", "ci"],
   "author": "Interledger Foundation",
