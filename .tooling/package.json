@@ -1,0 +1,13 @@
+{
+  "name": "@interledger/builders-tooling",
+  "version": "1.0.0",
+  "description": "Tooling scripts for the builders repository",
+  "type": "module",
+  "scripts": {
+    "detect-changes": "node detect-changes.js",
+    "test": "node test.js"
+  },
+  "keywords": ["builders", "docker", "ci"],
+  "author": "Interledger Foundation",
+  "license": "Apache-2.0"
+}
