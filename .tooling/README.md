@@ -29,6 +29,7 @@ Returns a JSON array of folder names to stdout. Diagnostic messages are written 
 
 **Behavior:**
 
+- Always operates from the git repository root (not the current working directory)
 - In `list` mode: Returns all folders containing a Dockerfile (excludes hidden folders and `.tooling`)
 - In `detect` mode: Returns only folders with changes between BASE_REF and HEAD
 - On `workflow_dispatch` events: Returns all buildable folders
