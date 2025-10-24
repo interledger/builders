@@ -13,7 +13,28 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
+  validate-commits:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Validate conventional commits
+        env:
+          BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          cd .tooling
+          node validate-commits.js --base-ref "$BASE_REF"
+
   detect-changes:
+    needs: validate-commits
     runs-on: ubuntu-latest
     outputs:
       changed-folders: ${{ steps.changes.outputs.changed-folders }}

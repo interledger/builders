@@ -34,6 +34,72 @@ Returns a JSON array of folder names to stdout. Diagnostic messages are written 
 - On `workflow_dispatch` events: Returns all buildable folders
 - If no changes detected: Returns all buildable folders (safety fallback)
 
+### versioning.js
+
+Parses conventional commits and calculates semantic version bumps.
+
+**Usage:**
+
+```bash
+# Parse a commit message
+node versioning.js parse "feat: add new feature"
+
+# Validate a commit message (exits 1 if invalid)
+node versioning.js validate "fix: bug fix"
+
+# Get bump type
+node versioning.js bump "feat!: breaking change"
+
+# Calculate next version
+node versioning.js next v1.2.3 "feat: add feature"
+
+# Get initial version for new project
+node versioning.js initial "feat: first feature"
+```
+
+**As a module:**
+
+```javascript
+import { parseConventionalCommit, getVersionBump, getNextVersion } from './versioning.js';
+
+// Parse commit
+const parsed = parseConventionalCommit('feat(api): add endpoint');
+// { type: 'feat', scope: 'api', breaking: false, description: 'add endpoint', isValid: true }
+
+// Get bump type (with strict mode)
+const bump = getVersionBump('feat: new feature', true); // throws if invalid
+// 'minor'
+
+// Calculate next version
+const next = getNextVersion('v1.2.3', 'fix: bug fix');
+// 'v1.2.4'
+```
+
+### validate-commits.js
+
+Validates commit messages in CI/CD pipelines to ensure conventional commit compliance.
+
+**Usage:**
+
+```bash
+# Validate commits since base ref
+node validate-commits.js --base-ref origin/main
+
+# Validate single message
+node validate-commits.js --message "feat: add feature"
+
+# Use environment variable
+BASE_REF=origin/main node validate-commits.js
+```
+
+**Exit codes:**
+- `0`: All commits are valid
+- `1`: One or more commits are invalid (pipeline will fail)
+
+**Integration in CI:**
+
+The workflow automatically validates all commits in PRs and pushes. If any commit doesn't follow conventional commit format, the build will fail before any Docker images are built.
+
 ### image-tags.js
 
 Fetches and analyzes Docker image tags from GitHub Container Registry.
