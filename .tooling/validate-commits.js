@@ -52,9 +52,17 @@ function getCommitMessages(baseRef = 'HEAD~1', onlyLast = false) {
 /**
  * Validate a single commit message
  * @param {string} message - Commit message to validate
- * @returns {{valid: boolean, error?: string}}
+ * @returns {{valid: boolean, error?: string, skipped?: boolean}}
  */
 function validateCommit(message) {
+  // Check if it's a merge commit (skip validation)
+  if (message.match(/^Merge\s+(branch|pull request|[0-9a-f]+\s+into)/i)) {
+    return {
+      valid: true,
+      skipped: true,
+    };
+  }
+  
   const parsed = parseConventionalCommit(message);
   
   if (!parsed) {

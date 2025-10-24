@@ -27,12 +27,23 @@ jobs:
           node-version: '20'
 
       - name: Validate conventional commits
-        env:
-          BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
           cd .tooling
-          # By default, only validates the last commit
-          node validate-commits.js
+          
+          # In pull_request events, GitHub creates a merge commit.
+          # We want to validate the actual last commit from the PR branch, not the merge commit.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # Get the HEAD SHA of the PR branch (not the merge commit)
+            COMMIT_SHA="${{ github.event.pull_request.head.sha }}"
+            echo "Validating PR commit: $COMMIT_SHA"
+            COMMIT_MSG=$(git log -1 --format=%s $COMMIT_SHA)
+            echo "Commit message: $COMMIT_MSG"
+            node validate-commits.js --message "$COMMIT_MSG"
+          else
+            # For push events, validate the last commit normally
+            echo "Validating last commit on push"
+            node validate-commits.js
+          fi
 
   detect-changes:
     needs: validate-commits
