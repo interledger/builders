@@ -19,6 +19,9 @@ RUN curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/master
 RUN chmod 700 get_helm.sh
 RUN ./get_helm.sh
 
+# Install helm unittest
+RUN helm plugin install https://github.com/helm-unittest/helm-unittest.git
+
 # Install kustomize
 RUN curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" -o install_kustomize.sh
 
