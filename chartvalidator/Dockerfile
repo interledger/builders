@@ -12,12 +12,15 @@ FROM alpine:3.22
 RUN apk add --no-cache curl bash
 
 # Install python3 and pip
-RUN apk add --no-cache python3 py3-pip openssl
+RUN apk add --no-cache python3 py3-pip openssl git
 
 # Install Helm
 RUN curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3
 RUN chmod 700 get_helm.sh
 RUN ./get_helm.sh
+
+# Install helm unittest
+RUN helm plugin install https://github.com/helm-unittest/helm-unittest.git
 
 # Install kustomize
 RUN curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" -o install_kustomize.sh
