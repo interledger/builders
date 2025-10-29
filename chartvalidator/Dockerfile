@@ -15,7 +15,8 @@ RUN apk add --no-cache curl bash
 RUN apk add --no-cache python3 py3-pip openssl git
 
 # Install Helm
-RUN curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3
+RUN curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+
 RUN chmod 700 get_helm.sh
 RUN ./get_helm.sh
 
