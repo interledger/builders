@@ -14,11 +14,11 @@ RUN apk add --no-cache curl bash
 # Install python3 and pip
 RUN apk add --no-cache python3 py3-pip openssl git
 
-# Install Helm
-RUN curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
-
-RUN chmod 700 get_helm.sh
-RUN ./get_helm.sh
+RUN curl -fsSL https://get.helm.sh/helm-v3.19.0-linux-amd64.tar.gz -o helm.tar.gz && \
+    tar -zxvf helm.tar.gz && \
+    mv linux-amd64/helm /usr/local/bin/helm && \
+    chmod +x /usr/local/bin/helm && \
+    rm helm.tar.gz
 
 # Install helm unittest
 RUN helm plugin install https://github.com/helm-unittest/helm-unittest.git
