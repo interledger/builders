@@ -1,4 +1,4 @@
-module github.com/interledger/interledger-app-deploy/ci
+module github.com/builderslab/chartvalidator/checker
 
 go 1.24.5
 
