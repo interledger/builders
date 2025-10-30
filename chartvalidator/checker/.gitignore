@@ -5,3 +5,4 @@ helm_output
 manifests
 imageLists
 test_output
+checker
