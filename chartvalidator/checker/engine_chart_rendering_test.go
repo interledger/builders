@@ -10,17 +10,18 @@ import (
 // Helper function to create and start a chart rendering engine
 func createEngine(mockExecutor *MockCommandExecutor, includeErrorChan bool) *ChartRenderingEngine {
 	engine := &ChartRenderingEngine{
-		inputChan:  make(chan ChartRenderParams),
-		resultChan: make(chan RenderResult),
-		outputDir:  "test_output",
-		context:    context.Background(),
-		executor:   mockExecutor,
+		inputChan:   make(chan ChartRenderParams),
+		resultChan:  make(chan RenderResult),
+		outputDir:   "test_output",
+		context:     context.Background(),
+		executor:    mockExecutor,
+		apiVersions: []string{"something", "something-else"},
 	}
-	
+
 	if includeErrorChan {
 		engine.errorChan = make(chan ErrorResult)
 	}
-	
+
 	engine.Start(1)
 	return engine
 }
@@ -43,7 +44,7 @@ func TestRenderBasics(t *testing.T) {
 	assertChartFieldsMatch(t, testChart, result.Chart)
 
 	// Verify the command that was executed
-	expectedCommand := "helm template test-chart --release-name test-chart --repo https://example.com/charts -f values.yaml -f override.yaml --version 1.0.0 --include-crds"
+	expectedCommand := "helm template test-chart --release-name test-chart --repo https://example.com/charts -f values.yaml -f override.yaml --version 1.0.0 --include-crds --kube-version 1.33.0 --api-versions something --api-versions something-else"
 	actualCommand := mockExecutor.GetFullCommand()
 	assert.Equal(t, expectedCommand, actualCommand)
 }

@@ -5,11 +5,13 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 )
 
 var srcPrefix string = "../"
 var verboseLogging bool = false
+var kubernetesVersion string = "1.33.0"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -45,17 +47,17 @@ func printUsage() {
 	fmt.Println("Use 'run-manifest-checks <command> -h' to see command-specific flags.")
 }
 
-
-
 func runChartChecksCommand(args []string) {
 	fs := flag.NewFlagSet("run-checks", flag.ExitOnError)
 
 	var (
-		singleEnv = fs.String("env", "", "Only process this environment (folder name under -envdir).")
-		envDir    = fs.String("envdir", "../env", "Base directory containing environment folders.")
-		outputDir = fs.String("output", "manifests", "Output directory for rendered charts.")
-		verbose   = fs.Bool("v", false, "Enable verbose logging.")
-	)	
+		singleEnv            = fs.String("env", "", "Only process this environment (folder name under -envdir).")
+		envDir               = fs.String("envdir", "../env", "Base directory containing environment folders.")
+		outputDir            = fs.String("output", "manifests", "Output directory for rendered charts.")
+		apiVersions          = fs.String("api-versions", "", "Comma-separated list of additional Kubernetes API versions to pass to Helm.")
+		kubernetesVersionArg = fs.String("k8s-version", "1.33.0", "Kubernetes version to use for manifest validation.")
+		verbose              = fs.Bool("v", false, "Enable verbose logging.")
+	)
 
 	fs.Usage = func() {
 		fmt.Println("Usage: run-manifest-checks run-checks [flags]")
@@ -69,7 +71,7 @@ func runChartChecksCommand(args []string) {
 		fmt.Println(" 5. Validate that each Docker image exists in the registry.")
 		fmt.Println("")
 		fmt.Println("Docker needs to be authenticated to the registries used by the charts for image validation to work.")
-		fmt.Println("")		
+		fmt.Println("")
 		fs.PrintDefaults()
 	}
 
@@ -78,8 +80,12 @@ func runChartChecksCommand(args []string) {
 	}
 
 	verboseLogging = *verbose
-
-	if err := runAllChartChecks(*singleEnv, *envDir, *outputDir); err != nil {
+	kubernetesVersion = *kubernetesVersionArg
+	apiVersionsList := strings.Split(*apiVersions, ",")
+	if len(apiVersionsList) == 1 && apiVersionsList[0] == "" {
+		apiVersionsList = []string{}
+	}
+	if err := runAllChartChecks(*singleEnv, *envDir, *outputDir, apiVersionsList); err != nil {
 		fmt.Fprintf(os.Stderr, "Error running chart checks: %v\n", err)
 		os.Exit(1)
 	}
@@ -90,17 +96,19 @@ func runRenderOnlyCommand(args []string) {
 	fs := flag.NewFlagSet("render-only", flag.ExitOnError)
 
 	var (
-		singleEnv = fs.String("env", "", "Only process this environment (folder name under -envdir).")
-		envDir    = fs.String("envdir", "../env", "Base directory containing environment folders.")
-		outputDir = fs.String("output", "manifests", "Output directory for rendered charts.")
-		verbose   = fs.Bool("v", false, "Enable verbose logging.")
-	)	
+		singleEnv            = fs.String("env", "", "Only process this environment (folder name under -envdir).")
+		envDir               = fs.String("envdir", "../env", "Base directory containing environment folders.")
+		outputDir            = fs.String("output", "manifests", "Output directory for rendered charts.")
+		apiVersions          = fs.String("api-versions", "", "Comma-separated list of additional Kubernetes API versions to pass to Helm.")
+		kubernetesVersionArg = fs.String("k8s-version", "1.33.0", "Kubernetes version to use for manifest validation.")
+		verbose              = fs.Bool("v", false, "Enable verbose logging.")
+	)
 
 	fs.Usage = func() {
 		fmt.Println("Usage: run-manifest-checks render-only [flags]")
 		fmt.Println("")
 		fmt.Println("Renders all charts found in the ApplicationSets in the specified environment and outputs the manifests to the specified output directory.")
-		fmt.Println("")		
+		fmt.Println("")
 		fs.PrintDefaults()
 	}
 
@@ -109,22 +117,26 @@ func runRenderOnlyCommand(args []string) {
 	}
 
 	verboseLogging = *verbose
+	kubernetesVersion = *kubernetesVersionArg
 
-	if err := runAllChartRenders(*singleEnv, *envDir, *outputDir); err != nil {
+	apiVersionsList := strings.Split(*apiVersions, ",")
+	if len(apiVersionsList) == 1 && apiVersionsList[0] == "" {
+		apiVersionsList = []string{}
+	}
+	if err := runAllChartRenders(*singleEnv, *envDir, *outputDir, apiVersionsList); err != nil {
 		fmt.Fprintf(os.Stderr, "Error running chart renders: %v\n", err)
 		os.Exit(1)
 	}
 
 }
 
-
-func runAllChartRenders(singleEnv, envDir, outputDir string) error {
+func runAllChartRenders(singleEnv, envDir, outputDir string, apiVersions []string) error {
 	fmt.Println("Starting chart renders...")
 	params, err := findChartsInAppsets(envDir, singleEnv)
 	if err != nil {
 		return fmt.Errorf("failed to find charts in ApplicationSets: %w", err)
 	}
-	
+
 	fmt.Printf("Found %d charts to process.\n", len(params))
 
 	context := context.Background()
@@ -135,14 +147,15 @@ func runAllChartRenders(singleEnv, envDir, outputDir string) error {
 	}
 
 	renderer := ChartRenderingEngine{
-		context:    context,
-		executor:   &RealCommandExecutor{},
-		outputDir:  outputDir,
-		inputChan:  make(chan ChartRenderParams),
-		resultChan: make(chan RenderResult),
-		name:       "ChartRenderer",
-		errorChan: make(chan ErrorResult),
+		context:         context,
+		executor:        &RealCommandExecutor{},
+		outputDir:       outputDir,
+		inputChan:       make(chan ChartRenderParams),
+		resultChan:      make(chan RenderResult),
+		name:            "ChartRenderer",
+		errorChan:       make(chan ErrorResult),
 		workerWaitGroup: sync.WaitGroup{},
+		apiVersions:     apiVersions,
 	}
 	renderer.Start(10)
 
@@ -170,13 +183,13 @@ func runAllChartRenders(singleEnv, envDir, outputDir string) error {
 	return nil
 }
 
-func runAllChartChecks(singleEnv, envDir, outputDir string) error {
+func runAllChartChecks(singleEnv, envDir, outputDir string, apiVersions []string) error {
 	fmt.Println("Starting chart checks...")
 	params, err := findChartsInAppsets(envDir, singleEnv)
 	if err != nil {
 		return fmt.Errorf("failed to find charts in ApplicationSets: %w", err)
 	}
-	
+
 	fmt.Printf("Found %d charts to process.\n", len(params))
 
 	context := context.Background()
@@ -186,7 +199,7 @@ func runAllChartChecks(singleEnv, envDir, outputDir string) error {
 		return fmt.Errorf("failed to clear output directory: %w", err)
 	}
 
-	appChecker := NewAppCheckerEngine(context, outputDir)
+	appChecker := NewAppCheckerEngine(context, outputDir, apiVersions)
 	appChecker.Start(10)
 
 	go func() {
