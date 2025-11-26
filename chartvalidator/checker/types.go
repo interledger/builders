@@ -18,9 +18,9 @@ type DockerImageValidationResult struct {
 }
 
 type ImageExtractionResult struct {
-	Chart       ChartRenderParams
+	Chart        ChartRenderParams
 	ManifestFile string
-	Image       string
+	Image        string
 }
 
 // ChartRenderParams represents a Helm chart configuration extracted from ApplicationSet files
@@ -64,9 +64,9 @@ type validationFailure struct {
 
 // imageCheckSetup manages image checking infrastructure
 type imageCheckSetup struct {
-	inputPipe   chan *imageCheck
-	resultPipe  chan *imageCheck
-	results     map[string]*imageCheck
-	workerWg    sync.WaitGroup
-	resultsWg   sync.WaitGroup
+	inputPipe  chan *imageCheck
+	resultPipe chan *imageCheck
+	results    map[string]*imageCheck
+	workerWg   sync.WaitGroup
+	resultsWg  sync.WaitGroup
 }

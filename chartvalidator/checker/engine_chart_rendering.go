@@ -10,21 +10,21 @@ import (
 	"sync"
 )
 
-
 type ChartRenderingEngine struct {
 	inputChan  chan ChartRenderParams
 	resultChan chan RenderResult
 	errorChan  chan ErrorResult
 
-	outputDir  string
-	context    context.Context
-	executor   CommandExecutor
-	name	   string
+	outputDir       string
+	context         context.Context
+	executor        CommandExecutor
+	name            string
 	workerWaitGroup sync.WaitGroup
+	apiVersions     []string
 }
 
 type RenderResult struct {
-	Chart            ChartRenderParams
+	Chart        ChartRenderParams
 	ManifestPath string
 }
 
@@ -36,7 +36,7 @@ func (engine *ChartRenderingEngine) Start(workerCount int) {
 	}
 
 	for i := 0; i < workerCount; i++ {
-		engine.workerWaitGroup.Add(1)		
+		engine.workerWaitGroup.Add(1)
 		go func(workerId int) {
 			engine.worker(workerId)
 		}(i)
@@ -46,7 +46,7 @@ func (engine *ChartRenderingEngine) Start(workerCount int) {
 
 func (engine *ChartRenderingEngine) allDoneWorker() {
 	engine.workerWaitGroup.Wait()
-	logEngineDebug(engine.name,-1,"all workers done, closing output channel")	
+	logEngineDebug(engine.name, -1, "all workers done, closing output channel")
 	close(engine.resultChan)
 }
 
@@ -74,7 +74,6 @@ func (engine *ChartRenderingEngine) worker(workerId int) {
 	}
 }
 
-
 func (engine *ChartRenderingEngine) renderSingleChart(chart ChartRenderParams, workerId int) (*RenderResult, error) {
 
 	if !engine.executor.FileExists(chart.BaseValuesFile) {
@@ -96,16 +95,24 @@ func (engine *ChartRenderingEngine) renderSingleChart(chart ChartRenderParams, w
 		"-f", chart.ValuesOverride,
 		"--version", chart.ChartVersion,
 		"--include-crds",
+		"--kube-version", kubernetesVersion,
+	}
+
+	// Add API versions if any
+	for _, apiVer := range engine.apiVersions {
+		if apiVer != "" {
+			args = append(args, "--api-versions", apiVer)
+		}
 	}
 
 	logEngineDebug(engine.name, workerId, fmt.Sprintf("helm %s", strings.Join(args, " ")))
 	cmd := engine.executor.CommandContext(engine.context, "helm", args...)
-	
+
 	// Set working directory to current directory so relative paths work
 	if wd, err := os.Getwd(); err == nil {
 		cmd.SetDir(wd)
 	}
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		msg := fmt.Sprintf("helm command failed: %s\nOutput: %s", err.Error(), string(output))
@@ -122,7 +129,7 @@ func (engine *ChartRenderingEngine) renderSingleChart(chart ChartRenderParams, w
 		logEngineWarning(engine.name, workerId, msg)
 		return nil, fmt.Errorf("failed to get absolute path for output dir: %w", err)
 	}
-	
+
 	randStr := generateRandomString(6)
 	filename := fmt.Sprintf("%s_%s.yaml", chart.ChartName, randStr)
 	outputPath := filepath.Join(absOutputDir, filename)

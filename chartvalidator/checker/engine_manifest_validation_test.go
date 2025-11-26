@@ -22,9 +22,14 @@ func TestManifestValidationEngine(t *testing.T) {
 	// Verify manifest file path is correct
 	assert.Equal(t, testManifestFile, result.ManifestFile, "Expected correct manifest file path")
 
-	// Verify the command that was executed
-	expectedCommand := "kubeconform -strict -summary -schema-location default -schema-location https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json -schema-location ci/schemas/{{ .ResourceKind }}_{{ .ResourceAPIVersion }}.json -verbose -exit-on-error test_data/example.yaml"
-	assertCommandExecution(t, mockExecutor, expectedCommand)
+	// Verify the command that was executed (note: schemasDir will be an absolute path in tests)
+	// We just check that the command contains the key elements
+	actualCommand := mockExecutor.GetFullCommand()
+	assert.Contains(t, actualCommand, "kubeconform")
+	assert.Contains(t, actualCommand, "-strict")
+	assert.Contains(t, actualCommand, "-skip CustomResourceDefinition")
+	assert.Contains(t, actualCommand, "-kubernetes-version 1.33.0")
+	assert.Contains(t, actualCommand, "test_data/example.yaml")
 
 	close(engine.inputChan)
 }
@@ -59,7 +64,7 @@ func TestManifestValidationEngineMultipleFiles(t *testing.T) {
 		{
 			name:         "configmap manifest2",
 			manifestPath: "test_data/configmap.yaml",
-		},		
+		},
 	}
 
 	mockExecutor := createManifestValidationMockExecutor()

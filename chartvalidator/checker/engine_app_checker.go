@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sync"
 )
 
@@ -21,75 +22,84 @@ type AppCheckerEngine struct {
 	resultChan chan AppCheckResult
 	errorChan  chan ErrorResult
 
-	ChartRenderingEngine  *ChartRenderingEngine
+	ChartRenderingEngine     *ChartRenderingEngine
 	ManifestValidationEngine *ManifestValidationEngine
-	ImageExtractionEngine   *ImageExtractionEngine
+	ImageExtractionEngine    *ImageExtractionEngine
 	DockerValidationEngine   *DockerImageValidationEngine
 
-	context    context.Context
-	executor   CommandExecutor
+	context  context.Context
+	executor CommandExecutor
 
 	workerWaitGroup sync.WaitGroup
 
 	name string
 }
 
-func NewAppCheckerEngine(context context.Context, outputDir string) *AppCheckerEngine {
+func NewAppCheckerEngine(context context.Context, outputDir string, apiVersions []string) *AppCheckerEngine {
 
 	errorChan := make(chan ErrorResult)
 
 	cre := ChartRenderingEngine{
-		inputChan: make(chan ChartRenderParams),
-		resultChan: make(chan RenderResult),
-		errorChan: errorChan,
-		outputDir: outputDir,
-		context: context,
-		executor: &RealCommandExecutor{},
-		name: "ChartRenderer",
+		inputChan:   make(chan ChartRenderParams),
+		resultChan:  make(chan RenderResult),
+		errorChan:   errorChan,
+		outputDir:   outputDir,
+		context:     context,
+		executor:    &RealCommandExecutor{},
+		name:        "ChartRenderer",
+		apiVersions: apiVersions,
+	}
+
+	// Construct absolute path to schemas directory
+	schemasDir, err := filepath.Abs("schemas")
+	if err != nil {
+		// If we can't get the absolute path, use relative path as fallback
+		schemasDir = "schemas"
 	}
 
 	mve := ManifestValidationEngine{
-		inputChan: cre.resultChan,
-		resultChan: make(chan ManifestValidationResult),
-		errorChan: errorChan,
-		context: context,
-		executor: &RealCommandExecutor{},
-		name: "ManifestValidator",
+		inputChan:       cre.resultChan,
+		resultChan:      make(chan ManifestValidationResult),
+		errorChan:       errorChan,
+		context:         context,
+		executor:        &RealCommandExecutor{},
+		name:            "ManifestValidator",
+		schemasDir:      schemasDir,
 		workerWaitGroup: sync.WaitGroup{},
 	}
 
 	iee := ImageExtractionEngine{
-		inputChan: mve.resultChan,
-		outputChan: make(chan ImageExtractionResult),
-		errorChan: errorChan,
-		context: context,
-		name: "ImageExtractor",
+		inputChan:       mve.resultChan,
+		outputChan:      make(chan ImageExtractionResult),
+		errorChan:       errorChan,
+		context:         context,
+		name:            "ImageExtractor",
 		workerWaitGroup: sync.WaitGroup{},
 	}
 
 	dve := DockerImageValidationEngine{
-		inputChan: iee.outputChan,
-		outputChan: make(chan DockerImageValidationResult),
-		context: context,
-		executor: &RealCommandExecutor{},
-		name: "DockerValidator",
-		cache: map[string]DockerImageValidationResult{},
-		pending: map[string]*sync.WaitGroup{},
-		cacheLock: sync.RWMutex{},
+		inputChan:       iee.outputChan,
+		outputChan:      make(chan DockerImageValidationResult),
+		context:         context,
+		executor:        &RealCommandExecutor{},
+		name:            "DockerValidator",
+		cache:           map[string]DockerImageValidationResult{},
+		pending:         map[string]*sync.WaitGroup{},
+		cacheLock:       sync.RWMutex{},
 		workerWaitGroup: sync.WaitGroup{},
 	}
-	
+
 	return &AppCheckerEngine{
 		inputChan:  make(chan AppCheckInstruction),
 		resultChan: make(chan AppCheckResult),
 		errorChan:  make(chan ErrorResult),
 
-		context:    context,
-		executor:   &RealCommandExecutor{},
+		context:  context,
+		executor: &RealCommandExecutor{},
 
-		ChartRenderingEngine: &cre,
+		ChartRenderingEngine:     &cre,
 		ManifestValidationEngine: &mve,
-		ImageExtractionEngine:   &iee,
+		ImageExtractionEngine:    &iee,
 		DockerValidationEngine:   &dve,
 
 		name: "AppChecker",
@@ -98,7 +108,7 @@ func NewAppCheckerEngine(context context.Context, outputDir string) *AppCheckerE
 
 func (engine *AppCheckerEngine) allDoneWorker() {
 	engine.workerWaitGroup.Wait()
-	logEngineDebug(engine.name,-1,"all workers done, closing output channel")	
+	logEngineDebug(engine.name, -1, "all workers done, closing output channel")
 	close(engine.resultChan)
 }
 
@@ -113,7 +123,7 @@ func (engine *AppCheckerEngine) Start(workerCount int) {
 	// Pour the input instructions into the chart renderer
 	engine.workerWaitGroup.Add(1)
 	go engine.pumpAppCheckInstructionsToChartRenderer()
-	engine.workerWaitGroup.Add(1)	
+	engine.workerWaitGroup.Add(1)
 	go engine.pumpOutputsToAppCheckResults()
 
 	go engine.allDoneWorker()
@@ -147,14 +157,7 @@ func (engine *AppCheckerEngine) pumpOutputsToAppCheckResults() {
 func (engine *AppCheckerEngine) pumpAppCheckInstructionsToChartRenderer() {
 	defer engine.workerWaitGroup.Done()
 	for instruction := range engine.inputChan {
-		engine.ChartRenderingEngine.inputChan <- ChartRenderParams{
-			Env: instruction.Chart.Env,
-			ChartName: instruction.Chart.ChartName,
-			RepoURL: instruction.Chart.RepoURL,
-			ChartVersion: instruction.Chart.ChartVersion,
-			BaseValuesFile: instruction.Chart.BaseValuesFile,
-			ValuesOverride: instruction.Chart.ValuesOverride,
-		}
+		engine.ChartRenderingEngine.inputChan <- instruction.Chart
 	}
 	close(engine.ChartRenderingEngine.inputChan)
 }
