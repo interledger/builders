@@ -92,7 +92,7 @@ func NewAppCheckerEngine(context context.Context, outputDir string, apiVersions 
 	return &AppCheckerEngine{
 		inputChan:  make(chan AppCheckInstruction),
 		resultChan: make(chan AppCheckResult),
-		errorChan:  make(chan ErrorResult),
+		errorChan:  errorChan,
 
 		context:  context,
 		executor: &RealCommandExecutor{},
@@ -120,11 +120,15 @@ func (engine *AppCheckerEngine) Start(workerCount int) {
 	engine.ImageExtractionEngine.Start(workerCount)
 	engine.DockerValidationEngine.Start(workerCount)
 
+	go engine.closeErrorChanWhenEnginesDone()
+
 	// Pour the input instructions into the chart renderer
 	engine.workerWaitGroup.Add(1)
 	go engine.pumpAppCheckInstructionsToChartRenderer()
 	engine.workerWaitGroup.Add(1)
 	go engine.pumpOutputsToAppCheckResults()
+	engine.workerWaitGroup.Add(1)
+	go engine.pumpErrorsToAppCheckResults()
 
 	go engine.allDoneWorker()
 }
@@ -154,10 +158,31 @@ func (engine *AppCheckerEngine) pumpOutputsToAppCheckResults() {
 	logEngineDebug(engine.name, -1, "docker validation output closed")
 }
 
+func (engine *AppCheckerEngine) pumpErrorsToAppCheckResults() {
+	defer engine.workerWaitGroup.Done()
+	for errResult := range engine.errorChan {
+		engine.resultChan <- AppCheckResult{
+			Chart: errResult.Chart,
+			Image: "",
+			Error: errResult.Error,
+		}
+	}
+	logEngineDebug(engine.name, -1, "error channel closed")
+}
+
 func (engine *AppCheckerEngine) pumpAppCheckInstructionsToChartRenderer() {
 	defer engine.workerWaitGroup.Done()
 	for instruction := range engine.inputChan {
 		engine.ChartRenderingEngine.inputChan <- instruction.Chart
 	}
 	close(engine.ChartRenderingEngine.inputChan)
+}
+
+func (engine *AppCheckerEngine) closeErrorChanWhenEnginesDone() {
+	engine.ChartRenderingEngine.workerWaitGroup.Wait()
+	engine.ManifestValidationEngine.workerWaitGroup.Wait()
+	engine.ImageExtractionEngine.workerWaitGroup.Wait()
+	engine.DockerValidationEngine.workerWaitGroup.Wait()
+	logEngineDebug(engine.name, -1, "all child engines done, closing error channel")
+	close(engine.errorChan)
 }
