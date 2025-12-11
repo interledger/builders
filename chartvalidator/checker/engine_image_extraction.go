@@ -15,18 +15,18 @@ import (
 // Consumes manifest files from inputChan, extracts Docker images, and sends results to outputChan
 type ImageExtractionEngine struct {
 	// Each string should be a path to a manifest file
-	inputChan chan ManifestValidationResult
+	inputChan  chan ManifestValidationResult
 	outputChan chan ImageExtractionResult
 	errorChan  chan ErrorResult
 
-	context context.Context
+	context         context.Context
 	workerWaitGroup sync.WaitGroup
-	name string
+	name            string
 }
 
 func (engine *ImageExtractionEngine) Start(workerCount int) {
 	for i := 0; i < workerCount; i++ {
-		engine.workerWaitGroup.Add(1)		
+		engine.workerWaitGroup.Add(1)
 		go func(workerId int) {
 			engine.worker(workerId)
 		}(i)
@@ -35,9 +35,9 @@ func (engine *ImageExtractionEngine) Start(workerCount int) {
 }
 
 func (engine *ImageExtractionEngine) allDoneWorker() {
-	logEngineDebug(engine.name,-1, "waiting for workers to finish")
+	logEngineDebug(engine.name, -1, "waiting for workers to finish")
 	engine.workerWaitGroup.Wait()
-	logEngineDebug(engine.name,-1,"all workers done, closing output channel")	
+	logEngineDebug(engine.name, -1, "all workers done, closing output channel")
 	close(engine.outputChan)
 }
 
@@ -55,7 +55,7 @@ func (engine *ImageExtractionEngine) worker(workerId int) {
 				logEngineWarning(engine.name, workerId, fmt.Sprintf("failed to extract images from %s: %v", input.ManifestFile, err))
 				engine.errorChan <- ErrorResult{
 					Chart: input.Chart,
-					Error:  fmt.Errorf("failed to extract images from %s: %w", input.ManifestFile, err),
+					Error: fmt.Errorf("failed to extract images from %s: %w", input.ManifestFile, err),
 				}
 				continue
 			} else {
@@ -64,9 +64,9 @@ func (engine *ImageExtractionEngine) worker(workerId int) {
 				logEngineDebug(engine.name, workerId, fmt.Sprintf("extracted %d images from %s", len(uniqueImages), input.ManifestFile))
 				for _, img := range uniqueImages {
 					engine.outputChan <- ImageExtractionResult{
-						Chart: input.Chart,
+						Chart:        input.Chart,
 						ManifestFile: input.ManifestFile,
-						Image:       img,
+						Image:        img,
 					}
 				}
 			}
@@ -107,7 +107,6 @@ func (engine *ImageExtractionEngine) extractImagesFromFile(file string, workerId
 
 	return allImages, nil
 }
-
 
 // extractDockerImages extracts Docker images from all manifest files in the specified directory
 // and saves the results as JSON files in the output directory
@@ -203,7 +202,6 @@ func extractImagesFromFile(yamlFile, manifestDir, outputDir string, workerId int
 	logEngineDebug("ImageExtractor", -1, fmt.Sprintf("Extracted %d unique images from %s -> %s", len(uniqueImages), relPath, jsonFileName))
 	return nil
 }
-
 
 func extractImagesFromDeployment(manifest map[string]interface{}) ([]string, error) {
 	// Validate this is a Deployment
@@ -310,7 +308,6 @@ func extractImagesFromPod(manifest map[string]interface{}) ([]string, error) {
 	return images, nil
 }
 
-
 // Extracts all of the docker images references from a given Kubernetes manifest.
 // This function makes the assumption that only a single manifest is provided at
 // a time, and that it is a Pod or Pod-like object (e.g. Deployment, DaemonSet).
@@ -321,6 +318,11 @@ func extractImageFromManifest(manifest string, workerId int) ([]string, error) {
 	var doc map[string]interface{}
 	if err := yaml.Unmarshal([]byte(manifest), &doc); err != nil {
 		return imagesFound, fmt.Errorf("failed to parse YAML: %w", err)
+	}
+
+	// If the document is empty (e.g., comment-only section), skip it gracefully
+	if len(doc) == 0 {
+		return imagesFound, nil
 	}
 
 	kind, ok := doc["kind"].(string)
@@ -349,7 +351,7 @@ func extractImageFromManifest(manifest string, workerId int) ([]string, error) {
 		if err != nil {
 			return imagesFound, err
 		}
-		imagesFound = append(imagesFound, images...)	
+		imagesFound = append(imagesFound, images...)
 
 	case "StatefulSet":
 		images, err := extractImagesFromStatefulSet(doc)
@@ -365,5 +367,5 @@ func extractImageFromManifest(manifest string, workerId int) ([]string, error) {
 	}
 
 	return imagesFound, nil
-	
+
 }

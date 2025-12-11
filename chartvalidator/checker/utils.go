@@ -5,7 +5,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 )
 
@@ -33,10 +32,10 @@ func logEngine(level, engineName string, workerId int, message string) {
 
 	// Split message into lines if it contains newlines
 	lines := strings.Split(message, "\n")
-	
+
 	// Print first line with full prefix and color
 	fmt.Printf("%s[%s]\t[%s Worker %d]\t%s%s\n", color, level, engineName, workerId, lines[0], colorReset)
-	
+
 	// Print additional lines with empty columns for alignment
 	for i := 1; i < len(lines); i++ {
 		fmt.Printf("\t\t%s\n", lines[i])
@@ -54,24 +53,6 @@ func logEngineWarning(engineName string, workerId int, message string) {
 	logEngine("WARNING", engineName, workerId, message)
 }
 
-func logEngineError(engineName string, workerId int, message string) {
-	logEngine("ERROR", engineName, workerId, message)
-}
-
-// getJobCount returns the number of parallel jobs to run
-func getJobCount() int {
-	if s := os.Getenv("KUBECONFORM_JOBS"); strings.TrimSpace(s) != "" {
-		if n, err := parseInt(s); err == nil && n > 0 {
-			return n
-		}
-	}
-	n := runtime.NumCPU()
-	if n <= 0 {
-		n = 4
-	}
-	return n
-}
-
 // parseInt parses a string to integer, returning error if invalid
 func parseInt(s string) (int, error) {
 	var n int
@@ -84,11 +65,11 @@ func recreateOutputDir(outputDir string) error {
 	if err := os.RemoveAll(outputDir); err != nil {
 		return fmt.Errorf("failed to remove output directory: %w", err)
 	}
-	
+
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
-	
+
 	return nil
 }
 
