@@ -42,9 +42,6 @@ jobs:
 ## Building locally
 
 ```bash
-<<<<<<< HEAD
 cd gotester
-=======
->>>>>>> 0567265 (feat(gotester): added gotester for go build speedups)
 docker build -t gotester .
 ```
