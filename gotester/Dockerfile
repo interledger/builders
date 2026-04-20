@@ -4,6 +4,7 @@ FROM golang:1.25-alpine
 #   bash     - shell scripts in CI steps
 #   bc       - floating-point coverage threshold comparison
 #   curl     - downloading tools (Atlas CLI)
+#   docker-cli - mock e2e tests that spin up containers (e.g. mockchimoney Redis)
 #   git      - Go modules, golangci-lint VCS checks
 #   grep     - GNU grep with -P (PCRE) for extracting coverage thresholds
 #   make     - mock service Makefiles
@@ -12,6 +13,7 @@ RUN apk add --no-cache \
     bash \
     bc \
     curl \
+    docker-cli \
     git \
     grep \
     make \
