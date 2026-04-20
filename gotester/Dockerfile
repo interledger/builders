@@ -18,10 +18,19 @@ RUN apk add --no-cache \
     postgresql17-client
 
 # golangci-lint v2.5.0 — used by both mock-tester and linting workflows
-RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
-    | sh -s -- -b /usr/local/bin v2.5.0
+# Installed from versioned release artifact with checksum verification.
+ARG GOLANGCI_LINT_VERSION=2.5.0
+ARG GOLANGCI_LINT_SHA256=c77313a77e19b06123962c411d9943cc0d092bbec76b956104d18964e274902e
+RUN curl -sSfL "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64.tar.gz" \
+      -o /tmp/golangci-lint.tar.gz \
+    && echo "${GOLANGCI_LINT_SHA256}  /tmp/golangci-lint.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/golangci-lint.tar.gz -C /tmp \
+    && mv /tmp/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64/golangci-lint /usr/local/bin/ \
+    && rm -rf /tmp/golangci-lint*
 
 # Atlas CLI — generates test migrations for backend/pacioli database schemas
-RUN curl -sSf https://atlasgo.sh | sh
+# Pinned to a specific version via ATLAS_VERSION; bump the ARG to upgrade.
+ARG ATLAS_VERSION=v1.2.0
+RUN ATLAS_VERSION=${ATLAS_VERSION} curl -sSf https://atlasgo.sh | sh
 
 WORKDIR /app

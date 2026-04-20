@@ -8,7 +8,7 @@ Pre-built image for running Go unit tests, mock-service tests, and linting in th
 |------|---------|---------|
 | Go | 1.25 | Compile and test Go code |
 | golangci-lint | 2.5.0 | Lint all Go packages |
-| Atlas CLI | latest | Generate database test migrations |
+| Atlas CLI | 1.2.0 | Generate database test migrations |
 | PostgreSQL 17 client | 17.x | `pg_isready` to wait for Postgres service containers |
 | GNU grep (PCRE) | — | Extract coverage thresholds with `-oP` |
 | bc | — | Floating-point coverage comparison |
@@ -42,5 +42,6 @@ jobs:
 ## Building locally
 
 ```bash
+cd gotester
 docker build -t gotester .
 ```
