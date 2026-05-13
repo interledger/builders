@@ -88,14 +88,18 @@ func (engine *ChartRenderingEngine) renderSingleChart(chart ChartRenderParams, w
 	}
 
 	args := []string{
-		"template", chart.ChartName,
+		"template",
+		resolveChartReference(chart),
 		"--release-name", chart.ChartName,
-		"--repo", chart.RepoURL,
 		"-f", chart.BaseValuesFile,
 		"-f", chart.ValuesOverride,
 		"--version", chart.ChartVersion,
 		"--include-crds",
 		"--kube-version", kubernetesVersion,
+	}
+
+	if !isOCIRepo(chart.RepoURL) {
+		args = append(args, "--repo", chart.RepoURL)
 	}
 
 	// Add API versions if any
@@ -142,6 +146,17 @@ func (engine *ChartRenderingEngine) renderSingleChart(chart ChartRenderParams, w
 	}
 
 	return &RenderResult{Chart: chart, ManifestPath: outputPath}, nil
+}
+
+func isOCIRepo(repoURL string) bool {
+	return strings.HasPrefix(repoURL, "oci://")
+}
+
+func resolveChartReference(chart ChartRenderParams) string {
+	if isOCIRepo(chart.RepoURL) {
+		return fmt.Sprintf("%s/%s", strings.TrimSuffix(chart.RepoURL, "/"), chart.ChartName)
+	}
+	return chart.ChartName
 }
 
 // Suffix the files just in case two charts end up having the same name
