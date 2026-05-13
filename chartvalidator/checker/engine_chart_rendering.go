@@ -88,6 +88,11 @@ func (engine *ChartRenderingEngine) renderSingleChart(chart ChartRenderParams, w
 		return nil, fmt.Errorf("values override file does not exist: %s", chart.ValuesOverride)
 	}
 
+	// Normalize repoURL so that scheme-less OCI references (which ArgoCD
+	// ApplicationSets accept) are treated the same as explicit `oci://` URLs.
+	// See normalizeRepoURL for the rationale.
+	chart.RepoURL = normalizeRepoURL(chart.RepoURL)
+
 	args := []string{
 		"template",
 		chart.ChartName,

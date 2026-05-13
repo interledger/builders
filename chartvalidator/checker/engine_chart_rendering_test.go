@@ -73,6 +73,28 @@ func TestRenderOCIRepo(t *testing.T) {
 	assert.Equal(t, "---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: test\n", string(renderedManifest))
 }
 
+// Scheme-less repoURLs (as used in ArgoCD ApplicationSets that point at GAR /
+// other OCI registries without the oci:// prefix) must be templated as OCI,
+// matching the behaviour of explicit `oci://` URLs.
+func TestRenderOCIRepoNoScheme(t *testing.T) {
+	mockExecutor := createMockExecutor()
+	mockExecutor.Output = []byte("---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: test\n")
+	engine := createEngine(mockExecutor, false)
+	defer cleanupEngine(engine)
+
+	testChart := createTestChart()
+	testChart.RepoURL = "europe-west4-docker.pkg.dev/wallet-dev-462809/interledger-helm-charts"
+	engine.inputChan <- testChart
+
+	result := <-engine.resultChan
+	// Engine normalises RepoURL, so compare against the normalised form.
+	assert.Equal(t, "oci://europe-west4-docker.pkg.dev/wallet-dev-462809/interledger-helm-charts", result.Chart.RepoURL)
+
+	expectedCommand := "helm template test-chart oci://europe-west4-docker.pkg.dev/wallet-dev-462809/interledger-helm-charts/test-chart -f values.yaml -f override.yaml --version 1.0.0 --include-crds --kube-version 1.33.0 --api-versions something --api-versions something-else"
+	actualCommand := mockExecutor.GetFullCommand()
+	assert.Equal(t, expectedCommand, actualCommand)
+}
+
 func TestRenderBaseFileNotExist(t *testing.T) {
 	mockExecutor := createMockExecutor()
 	mockExecutor.FileExistsMap = map[string]bool{

@@ -159,3 +159,24 @@ func createManifestValidationMockExecutor() *MockCommandExecutor {
 		Error:  nil,
 	}
 }
+func TestNormalizeRepoURL(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"empty", "", ""},
+		{"whitespace", "   ", ""},
+		{"https passthrough", "https://example.com/charts", "https://example.com/charts"},
+		{"http passthrough", "http://example.com/charts", "http://example.com/charts"},
+		{"oci passthrough", "oci://europe-west4-docker.pkg.dev/p/r", "oci://europe-west4-docker.pkg.dev/p/r"},
+		{"gar no scheme", "europe-west4-docker.pkg.dev/p/r", "oci://europe-west4-docker.pkg.dev/p/r"},
+		{"ghcr no scheme", "ghcr.io/org/charts", "oci://ghcr.io/org/charts"},
+		{"trims whitespace", "  ghcr.io/org/charts  ", "oci://ghcr.io/org/charts"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, normalizeRepoURL(tc.in))
+		})
+	}
+}

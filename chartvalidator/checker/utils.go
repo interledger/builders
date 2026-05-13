@@ -110,3 +110,27 @@ func findYAMLFiles(dir string) ([]string, error) {
 		return strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml")
 	})
 }
+
+// normalizeRepoURL canonicalises an ApplicationSet `repoURL` for use with
+// `helm template --repo`.
+//
+// ArgoCD's ApplicationSet multi-source supports OCI registries with the
+// scheme omitted (e.g. `europe-west4-docker.pkg.dev/.../charts`), and some
+// consumers rely on that form. The helm CLI, however, requires an explicit
+// `oci://` scheme for OCI registries — otherwise it fails with
+// "could not find protocol handler for: <empty>".
+//
+// Heuristic: if the URL has no scheme (no `://`), treat it as OCI and
+// prepend `oci://`. URLs that are clearly HTTP chart repos already carry
+// `http://` or `https://`, and OCI URLs that already carry `oci://` are
+// left untouched.
+func normalizeRepoURL(repoURL string) string {
+	trimmed := strings.TrimSpace(repoURL)
+	if trimmed == "" {
+		return trimmed
+	}
+	if strings.Contains(trimmed, "://") {
+		return trimmed
+	}
+	return "oci://" + trimmed
+}
