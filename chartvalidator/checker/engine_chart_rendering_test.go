@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -44,13 +45,14 @@ func TestRenderBasics(t *testing.T) {
 	assertChartFieldsMatch(t, testChart, result.Chart)
 
 	// Verify the command that was executed
-	expectedCommand := "helm template test-chart --release-name test-chart -f values.yaml -f override.yaml --version 1.0.0 --include-crds --kube-version 1.33.0 --repo https://example.com/charts --api-versions something --api-versions something-else"
+	expectedCommand := "helm template test-chart test-chart -f values.yaml -f override.yaml --version 1.0.0 --include-crds --kube-version 1.33.0 --repo https://example.com/charts --api-versions something --api-versions something-else"
 	actualCommand := mockExecutor.GetFullCommand()
 	assert.Equal(t, expectedCommand, actualCommand)
 }
 
 func TestRenderOCIRepo(t *testing.T) {
 	mockExecutor := createMockExecutor()
+	mockExecutor.Output = []byte("Pulled: europe-west4-docker.pkg.dev/wallet-dev-462809/interledger-helm-charts/test-chart:1.0.0\nDigest: sha256:abc123\n---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: test\n")
 	engine := createEngine(mockExecutor, false)
 	defer cleanupEngine(engine)
 
@@ -62,9 +64,13 @@ func TestRenderOCIRepo(t *testing.T) {
 	assertChartFieldsMatch(t, testChart, result.Chart)
 
 	// OCI charts should be templated using the full OCI chart reference, not --repo.
-	expectedCommand := "helm template oci://europe-west4-docker.pkg.dev/wallet-dev-462809/interledger-helm-charts/test-chart --release-name test-chart -f values.yaml -f override.yaml --version 1.0.0 --include-crds --kube-version 1.33.0 --api-versions something --api-versions something-else"
+	expectedCommand := "helm template test-chart oci://europe-west4-docker.pkg.dev/wallet-dev-462809/interledger-helm-charts/test-chart -f values.yaml -f override.yaml --version 1.0.0 --include-crds --kube-version 1.33.0 --api-versions something --api-versions something-else"
 	actualCommand := mockExecutor.GetFullCommand()
 	assert.Equal(t, expectedCommand, actualCommand)
+
+	renderedManifest, err := os.ReadFile(result.ManifestPath)
+	assert.NoError(t, err)
+	assert.Equal(t, "---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: test\n", string(renderedManifest))
 }
 
 func TestRenderBaseFileNotExist(t *testing.T) {
