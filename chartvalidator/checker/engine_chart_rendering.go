@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"math/rand"
@@ -89,8 +90,8 @@ func (engine *ChartRenderingEngine) renderSingleChart(chart ChartRenderParams, w
 
 	args := []string{
 		"template",
+		chart.ChartName,
 		resolveChartReference(chart),
-		"--release-name", chart.ChartName,
 		"-f", chart.BaseValuesFile,
 		"-f", chart.ValuesOverride,
 		"--version", chart.ChartVersion,
@@ -123,6 +124,8 @@ func (engine *ChartRenderingEngine) renderSingleChart(chart ChartRenderParams, w
 		logEngineWarning(engine.name, workerId, msg)
 		return nil, fmt.Errorf("helm command failed: %w", err)
 	}
+
+	output = sanitizeManifestOutput(output)
 
 	logEngineDebug(engine.name, workerId, fmt.Sprintf("helm %s\t\tCOMPLETED", strings.Join(args, " ")))
 
@@ -157,6 +160,29 @@ func resolveChartReference(chart ChartRenderParams) string {
 		return fmt.Sprintf("%s/%s", strings.TrimSuffix(chart.RepoURL, "/"), chart.ChartName)
 	}
 	return chart.ChartName
+}
+
+func sanitizeManifestOutput(output []byte) []byte {
+	trimmed := bytes.TrimLeft(output, "\n\r\t ")
+	manifestMarkers := [][]byte{
+		[]byte("---\n"),
+		[]byte("apiVersion:"),
+		[]byte("# Source:"),
+	}
+
+	firstIndex := -1
+	for _, marker := range manifestMarkers {
+		idx := bytes.Index(trimmed, marker)
+		if idx >= 0 && (firstIndex == -1 || idx < firstIndex) {
+			firstIndex = idx
+		}
+	}
+
+	if firstIndex <= 0 {
+		return trimmed
+	}
+
+	return trimmed[firstIndex:]
 }
 
 // Suffix the files just in case two charts end up having the same name
