@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 type AppCheckInstruction struct {
@@ -86,6 +87,7 @@ func NewAppCheckerEngine(context context.Context, outputDir string, apiVersions 
 		cache:           map[string]DockerImageValidationResult{},
 		pending:         map[string]*sync.WaitGroup{},
 		cacheLock:       sync.RWMutex{},
+		retrySleepFn:    time.Sleep,
 		workerWaitGroup: sync.WaitGroup{},
 	}
 

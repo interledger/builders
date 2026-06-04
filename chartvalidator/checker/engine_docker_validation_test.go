@@ -15,13 +15,14 @@ import (
 // Helper function to create a Docker validation engine
 func createDockerValidationEngine(mockExecutor *MockCommandExecutor) *DockerImageValidationEngine {
 	return &DockerImageValidationEngine{
-		inputChan:  make(chan ImageExtractionResult),
-		outputChan: make(chan DockerImageValidationResult),
-		executor:   mockExecutor,
-		context:    createTestContext(),
-		cache:      make(map[string]DockerImageValidationResult),
-		pending:    make(map[string]*sync.WaitGroup),
-		name:       "DockerImageValidationEngine",
+		inputChan:    make(chan ImageExtractionResult),
+		outputChan:   make(chan DockerImageValidationResult),
+		executor:     mockExecutor,
+		context:      createTestContext(),
+		cache:        make(map[string]DockerImageValidationResult),
+		pending:      make(map[string]*sync.WaitGroup),
+		name:         "DockerImageValidationEngine",
+		retrySleepFn: func(time.Duration) {},
 	}
 }
 
@@ -417,6 +418,53 @@ func TestValidateSingleDockerImage(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDockerValidationRetry(t *testing.T) {
+	callCount := 0
+	mockExecutor := createMockExecutorWithBehavior(func() error {
+		callCount++
+		if callCount < 3 {
+			return fmt.Errorf("transient docker error")
+		}
+		return nil
+	})
+
+	engine := createDockerValidationEngine(mockExecutor)
+	engine.Start(1)
+
+	img := "nginx:1.20"
+	go func() {
+		engine.inputChan <- ImageExtractionResult{Image: img}
+	}()
+
+	result := <-engine.outputChan
+	assert.Equal(t, img, result.Image)
+	assert.Nil(t, result.Error, "expected success after retries")
+	assert.True(t, result.Exists)
+	assert.Equal(t, 3, callCount, "expected 3 attempts (2 failures then 1 success)")
+}
+
+func TestDockerValidationRetriesExhausted(t *testing.T) {
+	callCount := 0
+	mockExecutor := createMockExecutorWithBehavior(func() error {
+		callCount++
+		return fmt.Errorf("persistent docker error")
+	})
+
+	engine := createDockerValidationEngine(mockExecutor)
+	engine.Start(1)
+
+	img := "nginx:1.20"
+	go func() {
+		engine.inputChan <- ImageExtractionResult{Image: img}
+	}()
+
+	result := <-engine.outputChan
+	assert.Equal(t, img, result.Image)
+	assert.NotNil(t, result.Error)
+	assert.False(t, result.Exists)
+	assert.Equal(t, 4, callCount, "expected 4 attempts (1 initial + 3 retries)")
 }
 
 func TestDockerValidationError(t *testing.T) {
