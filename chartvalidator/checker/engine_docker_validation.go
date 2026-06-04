@@ -135,6 +135,7 @@ func (engine *DockerImageValidationEngine) validateSingleDockerImage(chart Chart
 	cmdStr := fmt.Sprintf("docker %s", strings.Join(args, " "))
 
 	var err error
+	var output []byte
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
 			sleepSecs := 1 + rand.Intn(15)
@@ -150,14 +151,20 @@ func (engine *DockerImageValidationEngine) validateSingleDockerImage(chart Chart
 		ctx, cancel := context.WithTimeout(engine.context, 2*time.Minute)
 		cmd := engine.executor.CommandContext(ctx, "docker", args...)
 		logEngineDebug(engine.name, workerId, fmt.Sprintf("executing: %s", cmdStr))
-		err = cmd.Run()
+		output, err = cmd.CombinedOutput()
 		cancel()
 
 		if err == nil {
 			logEngineDebug(engine.name, workerId, fmt.Sprintf("completed: %s", cmdStr))
 			break
 		}
-		logEngineWarning(engine.name, workerId, fmt.Sprintf("failed: %s", cmdStr))
+
+		logEngineWarning(engine.name, workerId, fmt.Sprintf("failed: %s: %s", cmdStr, strings.TrimSpace(string(output))))
+
+		if isPermanentDockerError(output) {
+			logEngineWarning(engine.name, workerId, fmt.Sprintf("not retrying %s: permanent failure detected", cmdStr))
+			break
+		}
 	}
 
 	return DockerImageValidationResult{
@@ -166,6 +173,25 @@ func (engine *DockerImageValidationEngine) validateSingleDockerImage(chart Chart
 		Error:  err,
 		Chart:  chart,
 	}
+}
+
+// isPermanentDockerError returns true if the command output indicates a failure
+// that will not resolve on retry, such as an image not existing or an auth error.
+func isPermanentDockerError(output []byte) bool {
+	s := strings.ToLower(string(output))
+	for _, pattern := range []string{
+		"manifest unknown",
+		"no such manifest",
+		"unauthorized",
+		"denied",
+		"invalid reference format",
+		"name unknown",
+	} {
+		if strings.Contains(s, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 // findJSONFiles recursively finds all JSON files in the given directory

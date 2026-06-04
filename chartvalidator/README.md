@@ -80,7 +80,7 @@ Parses the rendered YAML and collects the `image` field from every `containers` 
 
 Runs `docker manifest inspect {image}` for each unique image. Results are cached so the same image is only checked once even if it appears across multiple charts.
 
-If a manifest inspect fails due to a transient network error, the check is retried up to **3 times** with a random backoff of **1–15 seconds** between attempts before the image is considered missing.
+If a manifest inspect fails, the check is retried up to **3 times** with a random backoff of **1–15 seconds** between attempts. Failures that are clearly permanent — image not found (`manifest unknown`), auth errors (`unauthorized`, `denied`), or a bad image reference — are not retried.
 
 ---
 
