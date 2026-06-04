@@ -45,6 +45,10 @@ func (m *MockCommand) SetDir(dir string) {
 }
 
 func (m *MockCommand) CombinedOutput() ([]byte, error) {
+	if m.executor.BehaviorOnRun != nil {
+		err := m.executor.BehaviorOnRun()
+		return m.output, err
+	}
 	return m.output, m.err
 }
 

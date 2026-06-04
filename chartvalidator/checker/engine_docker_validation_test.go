@@ -15,13 +15,14 @@ import (
 // Helper function to create a Docker validation engine
 func createDockerValidationEngine(mockExecutor *MockCommandExecutor) *DockerImageValidationEngine {
 	return &DockerImageValidationEngine{
-		inputChan:  make(chan ImageExtractionResult),
-		outputChan: make(chan DockerImageValidationResult),
-		executor:   mockExecutor,
-		context:    createTestContext(),
-		cache:      make(map[string]DockerImageValidationResult),
-		pending:    make(map[string]*sync.WaitGroup),
-		name:       "DockerImageValidationEngine",
+		inputChan:    make(chan ImageExtractionResult),
+		outputChan:   make(chan DockerImageValidationResult),
+		executor:     mockExecutor,
+		context:      createTestContext(),
+		cache:        make(map[string]DockerImageValidationResult),
+		pending:      make(map[string]*sync.WaitGroup),
+		name:         "DockerImageValidationEngine",
+		retrySleepFn: func(time.Duration) {},
 	}
 }
 
@@ -65,6 +66,7 @@ func sendImagesToEngine(engine *DockerImageValidationEngine, images []string) {
 				Image: img,
 			}
 		}
+		close(engine.inputChan)
 	}()
 }
 
@@ -112,9 +114,8 @@ func TestDockerImageValidationEngine(t *testing.T) {
 
 	img := "nginx:1.20"
 	go func(s string) {
-		engine.inputChan <- ImageExtractionResult{
-			Image: s,
-		}
+		engine.inputChan <- ImageExtractionResult{Image: s}
+		close(engine.inputChan)
 	}(img)
 
 	result := <-engine.outputChan
@@ -126,7 +127,6 @@ func TestDockerImageValidationEngine(t *testing.T) {
 	}
 
 	assertCommandExecution(t, mockExecutor, "docker manifest inspect nginx:1.20")
-	engine.context.Done()
 }
 
 func TestDockerImageValidationCache(t *testing.T) {
@@ -419,24 +419,100 @@ func TestValidateSingleDockerImage(t *testing.T) {
 	}
 }
 
-func TestDockerValidationError(t *testing.T) {
+func TestDockerValidationRetry(t *testing.T) {
+	callCount := 0
 	mockExecutor := createMockExecutorWithBehavior(func() error {
-		return fmt.Errorf("mocked docker error")
+		callCount++
+		if callCount < 3 {
+			return fmt.Errorf("transient docker error")
+		}
+		return nil
 	})
+
+	engine := createDockerValidationEngine(mockExecutor)
+	engine.Start(1)
+
+	img := "nginx:1.20"
+	go func() {
+		engine.inputChan <- ImageExtractionResult{Image: img}
+		close(engine.inputChan)
+	}()
+
+	result := <-engine.outputChan
+	assert.Equal(t, img, result.Image)
+	assert.Nil(t, result.Error, "expected success after retries")
+	assert.True(t, result.Exists)
+	assert.Equal(t, 3, callCount, "expected 3 attempts (2 failures then 1 success)")
+}
+
+func TestDockerValidationRetriesExhausted(t *testing.T) {
+	callCount := 0
+	mockExecutor := createMockExecutorWithBehavior(func() error {
+		callCount++
+		return fmt.Errorf("transient docker error")
+	})
+
+	engine := createDockerValidationEngine(mockExecutor)
+	engine.Start(1)
+
+	img := "nginx:1.20"
+	go func() {
+		engine.inputChan <- ImageExtractionResult{Image: img}
+		close(engine.inputChan)
+	}()
+
+	result := <-engine.outputChan
+	assert.Equal(t, img, result.Image)
+	assert.NotNil(t, result.Error)
+	assert.False(t, result.Exists)
+	assert.Equal(t, 4, callCount, "expected 4 attempts (1 initial + 3 retries)")
+}
+
+func TestDockerValidationPermanentError(t *testing.T) {
+	callCount := 0
+	mockExecutor := &MockCommandExecutor{
+		Output: []byte("unauthorized: authentication required"),
+		BehaviorOnRun: func() error {
+			callCount++
+			return fmt.Errorf("exit status 1")
+		},
+	}
+
+	engine := createDockerValidationEngine(mockExecutor)
+	engine.Start(1)
+
+	img := "private.registry.io/app:v1.0"
+	go func() {
+		engine.inputChan <- ImageExtractionResult{Image: img}
+		close(engine.inputChan)
+	}()
+
+	result := <-engine.outputChan
+	assert.Equal(t, img, result.Image)
+	assert.NotNil(t, result.Error)
+	assert.False(t, result.Exists)
+	assert.Equal(t, 1, callCount, "expected exactly 1 attempt: permanent errors should not be retried")
+}
+
+func TestDockerValidationError(t *testing.T) {
+	mockExecutor := &MockCommandExecutor{
+		Output: []byte("manifest unknown: manifest unknown"),
+		BehaviorOnRun: func() error {
+			return fmt.Errorf("exit status 1")
+		},
+	}
 
 	engine := createDockerValidationEngine(mockExecutor)
 	engine.Start(1)
 
 	img := "nonexistent:image"
 	go func(s string) {
-		engine.inputChan <- ImageExtractionResult{
-			Image: s,
-		}
+		engine.inputChan <- ImageExtractionResult{Image: s}
+		close(engine.inputChan)
 	}(img)
 
 	result := <-engine.outputChan
 	assert.Equal(t, result.Image, img)
 	assert.NotNil(t, result.Error)
 	assertCommandExecution(t, mockExecutor, "docker manifest inspect nonexistent:image")
-	engine.context.Done()
 }

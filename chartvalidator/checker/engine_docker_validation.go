@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,12 +26,13 @@ type DockerImageValidationEngine struct {
 	executor CommandExecutor
 	context context.Context
 
-	cache  map[string]DockerImageValidationResult	
+	cache  map[string]DockerImageValidationResult
 	pending map[string]*sync.WaitGroup
 	cacheLock sync.RWMutex
 
 	name string
 
+	retrySleepFn    func(time.Duration)
 	workerWaitGroup sync.WaitGroup
 }
 
@@ -127,32 +129,69 @@ func (engine *DockerImageValidationEngine) waitForPending(chart ChartRenderParam
 }
 
 func (engine *DockerImageValidationEngine) validateSingleDockerImage(chart ChartRenderParams, image string, workerId int) DockerImageValidationResult {
-	ctx, cancel := context.WithTimeout(engine.context, 2*time.Minute)
-	defer cancel()
+	const maxRetries = 3
 
 	args := []string{"manifest", "inspect", image}
-	cmd := engine.executor.CommandContext(ctx, "docker", args...)
+	cmdStr := fmt.Sprintf("docker %s", strings.Join(args, " "))
 
-	// Print the command being executed using interface methods
-	cmdStr := fmt.Sprintf("%s %s", filepath.Base(cmd.GetPath()), strings.Join(cmd.GetArgs()[1:], " "))
-	logEngineDebug(engine.name, workerId, fmt.Sprintf("executing: %s", cmdStr))
+	var err error
+	var output []byte
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			sleepSecs := 1 + rand.Intn(15)
+			logEngineWarning(engine.name, workerId, fmt.Sprintf("retrying %s (attempt %d/%d) after %ds", cmdStr, attempt+1, maxRetries+1, sleepSecs))
+			engine.retrySleepFn(time.Duration(sleepSecs) * time.Second)
+			select {
+			case <-engine.context.Done():
+				return DockerImageValidationResult{Image: image, Exists: false, Error: engine.context.Err(), Chart: chart}
+			default:
+			}
+		}
 
-	err := cmd.Run()
+		ctx, cancel := context.WithTimeout(engine.context, 2*time.Minute)
+		cmd := engine.executor.CommandContext(ctx, "docker", args...)
+		logEngineDebug(engine.name, workerId, fmt.Sprintf("executing: %s", cmdStr))
+		output, err = cmd.CombinedOutput()
+		cancel()
 
-	exists := err == nil
-	if err != nil {
-		logEngineWarning(engine.name, workerId, fmt.Sprintf("failed: %s", cmdStr))
-	} else {
-		logEngineDebug(engine.name, workerId, fmt.Sprintf("completed: %s", cmdStr))
+		if err == nil {
+			logEngineDebug(engine.name, workerId, fmt.Sprintf("completed: %s", cmdStr))
+			break
+		}
+
+		logEngineWarning(engine.name, workerId, fmt.Sprintf("failed: %s: %s", cmdStr, strings.TrimSpace(string(output))))
+
+		if isPermanentDockerError(output) {
+			logEngineWarning(engine.name, workerId, fmt.Sprintf("not retrying %s: permanent failure detected", cmdStr))
+			break
+		}
 	}
 
 	return DockerImageValidationResult{
 		Image:  image,
-		Exists: exists,
+		Exists: err == nil,
 		Error:  err,
-		Chart: 	chart,
+		Chart:  chart,
 	}
+}
 
+// isPermanentDockerError returns true if the command output indicates a failure
+// that will not resolve on retry, such as an image not existing or an auth error.
+func isPermanentDockerError(output []byte) bool {
+	s := strings.ToLower(string(output))
+	for _, pattern := range []string{
+		"manifest unknown",
+		"no such manifest",
+		"unauthorized",
+		"denied",
+		"invalid reference format",
+		"name unknown",
+	} {
+		if strings.Contains(s, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 // findJSONFiles recursively finds all JSON files in the given directory
