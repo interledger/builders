@@ -9,8 +9,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// findChartsInAppsets scans ApplicationSet files and extracts chart information
-func findChartsInAppsets(envDir, selectedEnv string) ([]ChartRenderParams, error) {
+// findCharts scans an environment tree and extracts chart information from both
+// supported layouts: ApplicationSets under appsets/ and Applications under
+// applications/. envDir selects the tree (e.g. ../env or ../clusters).
+func findCharts(envDir, selectedEnv string) ([]ChartRenderParams, error) {
 	const suffix = "appset.yaml"
 	var out []ChartRenderParams
 
@@ -51,8 +53,26 @@ func findChartsInAppsets(envDir, selectedEnv string) ([]ChartRenderParams, error
 	return out, nil
 }
 
-// processEnvironment extracts charts from a single environment directory
+// processEnvironment extracts charts from a single environment directory, from
+// both the appsets/ and applications/ layouts. An environment that uses only
+// one of them simply contributes nothing from the other.
 func processEnvironment(envName, envPath, suffix string) ([]ChartRenderParams, error) {
+	charts, err := chartsFromAppsets(envName, envPath, suffix)
+	if err != nil {
+		return nil, err
+	}
+
+	appCharts, err := chartsFromApplications(envName, envPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return append(charts, appCharts...), nil
+}
+
+// chartsFromAppsets extracts charts from the ApplicationSet list generators in
+// <envPath>/appsets.
+func chartsFromAppsets(envName, envPath, suffix string) ([]ChartRenderParams, error) {
 	appsetsPath := filepath.Join(envPath, "appsets")
 	ok, err := existsDir(appsetsPath)
 	if err != nil || !ok {

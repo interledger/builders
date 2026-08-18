@@ -62,9 +62,9 @@ func runChartChecksCommand(args []string) {
 	fs.Usage = func() {
 		fmt.Println("Usage: run-manifest-checks run-checks [flags]")
 		fmt.Println("")
-		fmt.Println("Will run a series of checks against all charts found in the ApplicationSets in the specified environment.")
+		fmt.Println("Will run a series of checks against all charts found in the ApplicationSets and Applications in the specified environment.")
 		fmt.Println("Steps are as follows:")
-		fmt.Println(" 1. Find all charts referenced in ApplicationSets in the specified environment.")
+		fmt.Println(" 1. Find all charts referenced in ApplicationSets and Applications in the specified environment.")
 		fmt.Println(" 2. Render each chart with its values using Helm.")
 		fmt.Println(" 3. Validate the rendered manifests using kubeconform.")
 		fmt.Println(" 4. Extract Docker image references from the manifests.")
@@ -107,7 +107,7 @@ func runRenderOnlyCommand(args []string) {
 	fs.Usage = func() {
 		fmt.Println("Usage: run-manifest-checks render-only [flags]")
 		fmt.Println("")
-		fmt.Println("Renders all charts found in the ApplicationSets in the specified environment and outputs the manifests to the specified output directory.")
+		fmt.Println("Renders all charts found in the ApplicationSets and Applications in the specified environment and outputs the manifests to the specified output directory.")
 		fmt.Println("")
 		fs.PrintDefaults()
 	}
@@ -132,9 +132,9 @@ func runRenderOnlyCommand(args []string) {
 
 func runAllChartRenders(singleEnv, envDir, outputDir string, apiVersions []string) error {
 	fmt.Println("Starting chart renders...")
-	params, err := findChartsInAppsets(envDir, singleEnv)
+	params, err := findCharts(envDir, singleEnv)
 	if err != nil {
-		return fmt.Errorf("failed to find charts in ApplicationSets: %w", err)
+		return fmt.Errorf("failed to find charts: %w", err)
 	}
 
 	fmt.Printf("Found %d charts to process.\n", len(params))
@@ -185,9 +185,9 @@ func runAllChartRenders(singleEnv, envDir, outputDir string, apiVersions []strin
 
 func runAllChartChecks(singleEnv, envDir, outputDir string, apiVersions []string) error {
 	fmt.Println("Starting chart checks...")
-	params, err := findChartsInAppsets(envDir, singleEnv)
+	params, err := findCharts(envDir, singleEnv)
 	if err != nil {
-		return fmt.Errorf("failed to find charts in ApplicationSets: %w", err)
+		return fmt.Errorf("failed to find charts: %w", err)
 	}
 
 	fmt.Printf("Found %d charts to process.\n", len(params))
