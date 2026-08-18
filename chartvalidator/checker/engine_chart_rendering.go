@@ -77,15 +77,13 @@ func (engine *ChartRenderingEngine) worker(workerId int) {
 
 func (engine *ChartRenderingEngine) renderSingleChart(chart ChartRenderParams, workerId int) (*RenderResult, error) {
 
-	if !engine.executor.FileExists(chart.BaseValuesFile) {
-		msg := fmt.Sprintf("base values file does not exist: %s", chart.BaseValuesFile)
-		logEngineWarning(engine.name, workerId, msg)
-		return nil, fmt.Errorf("base values file does not exist: %s", chart.BaseValuesFile)
-	}
-	if !engine.executor.FileExists(chart.ValuesOverride) {
-		msg := fmt.Sprintf("values override file does not exist: %s", chart.ValuesOverride)
-		logEngineWarning(engine.name, workerId, msg)
-		return nil, fmt.Errorf("values override file does not exist: %s", chart.ValuesOverride)
+	valueFiles := chart.resolvedValueFiles()
+	for _, vf := range valueFiles {
+		if !engine.executor.FileExists(vf.path) {
+			msg := fmt.Sprintf("%s does not exist: %s", vf.label, vf.path)
+			logEngineWarning(engine.name, workerId, msg)
+			return nil, fmt.Errorf("%s does not exist: %s", vf.label, vf.path)
+		}
 	}
 
 	// Normalize repoURL so that scheme-less OCI references (which ArgoCD
@@ -97,12 +95,15 @@ func (engine *ChartRenderingEngine) renderSingleChart(chart ChartRenderParams, w
 		"template",
 		chart.ChartName,
 		resolveChartReference(chart),
-		"-f", chart.BaseValuesFile,
-		"-f", chart.ValuesOverride,
+	}
+	for _, vf := range valueFiles {
+		args = append(args, "-f", vf.path)
+	}
+	args = append(args,
 		"--version", chart.ChartVersion,
 		"--include-crds",
 		"--kube-version", kubernetesVersion,
-	}
+	)
 
 	if !isOCIRepo(chart.RepoURL) {
 		args = append(args, "--repo", chart.RepoURL)
