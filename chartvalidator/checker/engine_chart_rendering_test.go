@@ -95,8 +95,8 @@ func TestRenderOCIRepoNoScheme(t *testing.T) {
 	assert.Equal(t, expectedCommand, actualCommand)
 }
 
-// repoURL can already carry the chart name as its last segment. Argo's
-// native OCI sources work this way; see lastPathSegment in applications.go.
+// repoURL can already carry the chart name as its last segment. Argo's OCI
+// sources work this way, and they set the `chart` field to that same name.
 // The chart reference must not repeat the chart name in that case.
 func TestRenderOCIRepoChartEmbeddedInRepoURL(t *testing.T) {
 	mockExecutor := createMockExecutor()

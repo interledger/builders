@@ -164,8 +164,10 @@ func isOCIRepo(repoURL string) bool {
 func resolveChartReference(chart ChartRenderParams) string {
 	if isOCIRepo(chart.RepoURL) {
 		trimmed := strings.TrimSuffix(chart.RepoURL, "/")
-		// Argo's native OCI sources already carry the chart name as
-		// repoURL's last segment. See lastPathSegment in applications.go.
+		// An Argo OCI source names the chart twice: repoURL's last segment
+		// is the chart, and the `chart` field repeats it. Argo requires
+		// both, because it resolves the revision from repoURL alone, and
+		// its Application schema requires a `chart` field.
 		//
 		// Only append ChartName when repoURL is a registry or namespace
 		// path that still needs it. Otherwise the reference gets the
