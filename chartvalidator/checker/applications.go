@@ -112,18 +112,53 @@ func extractApplicationCharts(doc map[string]any, envName, path string) []ChartR
 	var charts []ChartRenderParams
 	for _, src := range sources {
 		chartName := str(src["chart"])
+		repoURL := str(src["repoURL"])
+
 		if chartName == "" {
-			continue
+			// Argo's native OCI sources carry no separate `chart` field.
+			// The chart itself is the full repoURL, for example
+			// oci://ghcr.io/interledger/charts/merchant. The chart name
+			// is that URL's last path segment.
+			//
+			// This check only recognizes an explicit "oci://" scheme. It
+			// does not recognize the scheme-less form ApplicationSets
+			// accept (see normalizeRepoURL). A scheme-less git remote,
+			// for example git@github.com:org/repo.git, also has no
+			// "://". Reading it as OCI would misread it as a chart.
+			//
+			// A non-OCI source with no chart field is a values-only ref
+			// source, or a git App-of-Apps path. It has nothing to
+			// render.
+			if !isOCIRepo(repoURL) {
+				continue
+			}
+			chartName = lastPathSegment(repoURL)
+			if chartName == "" {
+				continue
+			}
 		}
+
 		charts = append(charts, ChartRenderParams{
 			Env:          envName,
 			ChartName:    chartName,
-			RepoURL:      str(src["repoURL"]),
+			RepoURL:      repoURL,
 			ChartVersion: str(src["targetRevision"]),
 			ValueFiles:   applicationValueFiles(src, appName, path),
 		})
 	}
 	return charts
+}
+
+// lastPathSegment returns a URL or path's final "/"-separated, non-empty
+// segment. It names a chart when repoURL already points at the chart
+// itself. In that case, no separate chart name field exists.
+func lastPathSegment(url string) string {
+	trimmed := strings.TrimRight(url, "/")
+	if trimmed == "" {
+		return ""
+	}
+	idx := strings.LastIndex(trimmed, "/")
+	return trimmed[idx+1:]
 }
 
 // applicationValueFiles maps an Application source's helm.valueFiles onto paths
