@@ -127,6 +127,56 @@ spec:
 	assert.Equal(t, "example", charts[0].ChartName)
 }
 
+// Argo's native OCI sources carry no separate `chart` field. repoURL is the
+// full chart path. The chart name is its last path segment.
+func TestChartsFromApplications_OCISourceWithoutChartField(t *testing.T) {
+	root := t.TempDir()
+	writeApplicationFile(t, root, "cards-playground", "merchant.yaml", `apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: merchant
+spec:
+  sources:
+    - repoURL: git@github.com:interledger/testnet-deploy.git
+      targetRevision: main
+      ref: values
+    - repoURL: oci://ghcr.io/interledger/charts/merchant
+      targetRevision: 0.0.4
+      helm:
+        valueFiles:
+          - $values/env/cards-playground/merchant/merchant.yaml
+`)
+
+	charts, err := chartsFromApplications("cards-playground", filepath.Join(root, "cards-playground"))
+	require.NoError(t, err)
+	require.Len(t, charts, 1, "the values-only ref source must not yield a chart")
+
+	c := charts[0]
+	assert.Equal(t, "merchant", c.ChartName)
+	assert.Equal(t, "oci://ghcr.io/interledger/charts/merchant", c.RepoURL)
+	assert.Equal(t, "0.0.4", c.ChartVersion)
+}
+
+// A scheme-less repoURL with no chart field is not read as an OCI chart.
+// It is indistinguishable from an SCP-style git remote, for example
+// git@github.com:org/repo.git. That remote also has no "://".
+func TestChartsFromApplications_SchemeLessRepoWithoutChartFieldIsSkipped(t *testing.T) {
+	root := t.TempDir()
+	writeApplicationFile(t, root, "cards-playground", "merchant.yaml", `apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: merchant
+spec:
+  source:
+    repoURL: ghcr.io/interledger/charts/merchant
+    targetRevision: 0.0.4
+`)
+
+	charts, err := chartsFromApplications("cards-playground", filepath.Join(root, "cards-playground"))
+	require.NoError(t, err)
+	assert.Empty(t, charts)
+}
+
 func TestChartsFromApplications_MultipleChartSourcesInOneApp(t *testing.T) {
 	root := t.TempDir()
 	writeApplicationFile(t, root, "ilf-1", "two-charts.yaml", `apiVersion: argoproj.io/v1alpha1

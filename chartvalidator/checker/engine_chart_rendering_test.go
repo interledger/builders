@@ -95,6 +95,29 @@ func TestRenderOCIRepoNoScheme(t *testing.T) {
 	assert.Equal(t, expectedCommand, actualCommand)
 }
 
+// repoURL can already carry the chart name as its last segment. Argo's
+// native OCI sources work this way; see lastPathSegment in applications.go.
+// The chart reference must not repeat the chart name in that case.
+func TestRenderOCIRepoChartEmbeddedInRepoURL(t *testing.T) {
+	mockExecutor := createMockExecutor()
+	mockExecutor.Output = []byte("Pulled: ghcr.io/interledger/charts/merchant:0.0.4\nDigest: sha256:abc123\n---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: test\n")
+	engine := createEngine(mockExecutor, false)
+	defer cleanupEngine(engine)
+
+	testChart := createTestChart()
+	testChart.ChartName = "merchant"
+	testChart.RepoURL = "oci://ghcr.io/interledger/charts/merchant"
+	testChart.ChartVersion = "0.0.4"
+	engine.inputChan <- testChart
+
+	result := <-engine.resultChan
+	assertChartFieldsMatch(t, testChart, result.Chart)
+
+	expectedCommand := "helm template merchant oci://ghcr.io/interledger/charts/merchant -f values.yaml -f override.yaml --version 0.0.4 --include-crds --kube-version 1.33.0 --api-versions something --api-versions something-else"
+	actualCommand := mockExecutor.GetFullCommand()
+	assert.Equal(t, expectedCommand, actualCommand)
+}
+
 func TestRenderBaseFileNotExist(t *testing.T) {
 	mockExecutor := createMockExecutor()
 	mockExecutor.FileExistsMap = map[string]bool{
