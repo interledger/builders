@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 type ChartRenderingEngine struct {
@@ -20,6 +21,7 @@ type ChartRenderingEngine struct {
 	context         context.Context
 	executor        CommandExecutor
 	name            string
+	retrySleepFn    func(time.Duration)
 	workerWaitGroup sync.WaitGroup
 	apiVersions     []string
 }
@@ -117,17 +119,9 @@ func (engine *ChartRenderingEngine) renderSingleChart(chart ChartRenderParams, w
 	}
 
 	logEngineDebug(engine.name, workerId, fmt.Sprintf("helm %s", strings.Join(args, " ")))
-	cmd := engine.executor.CommandContext(engine.context, "helm", args...)
 
-	// Set working directory to current directory so relative paths work
-	if wd, err := os.Getwd(); err == nil {
-		cmd.SetDir(wd)
-	}
-
-	output, err := cmd.CombinedOutput()
+	output, err := engine.runHelm(args, workerId)
 	if err != nil {
-		msg := fmt.Sprintf("helm command failed: %s\nOutput: %s", err.Error(), string(output))
-		logEngineWarning(engine.name, workerId, msg)
 		return nil, fmt.Errorf("helm command failed: %w", err)
 	}
 
@@ -155,6 +149,100 @@ func (engine *ChartRenderingEngine) renderSingleChart(chart ChartRenderParams, w
 	}
 
 	return &RenderResult{Chart: chart, ManifestPath: outputPath}, nil
+}
+
+// runHelm executes `helm` and retries when the failure looks like a network
+// problem. Every render of a non-OCI chart downloads the repository index
+// again, so a run with many charts opens many connections to the same host at
+// once. A host such as GitHub Pages answers some of them with a TCP reset,
+// which fails the whole pipeline although nothing is wrong with the chart.
+func (engine *ChartRenderingEngine) runHelm(args []string, workerId int) ([]byte, error) {
+	const maxRetries = 3
+
+	cmdStr := fmt.Sprintf("helm %s", strings.Join(args, " "))
+
+	var output []byte
+	var err error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			sleepSecs := 1 + rand.Intn(15)
+			logEngineWarning(engine.name, workerId, fmt.Sprintf("retrying %s (attempt %d/%d) after %ds", cmdStr, attempt+1, maxRetries+1, sleepSecs))
+			engine.sleep(time.Duration(sleepSecs) * time.Second)
+			select {
+			case <-engine.context.Done():
+				return nil, engine.context.Err()
+			default:
+			}
+		}
+
+		cmd := engine.executor.CommandContext(engine.context, "helm", args...)
+
+		// Set working directory to current directory so relative paths work
+		if wd, wdErr := os.Getwd(); wdErr == nil {
+			cmd.SetDir(wd)
+		}
+
+		output, err = cmd.CombinedOutput()
+		if err == nil {
+			return output, nil
+		}
+
+		msg := fmt.Sprintf("helm command failed: %s\nOutput: %s", err.Error(), string(output))
+		logEngineWarning(engine.name, workerId, msg)
+
+		if !isTransientHelmError(output) {
+			logEngineWarning(engine.name, workerId, fmt.Sprintf("not retrying %s: permanent failure detected", cmdStr))
+			break
+		}
+	}
+
+	return output, err
+}
+
+// sleep waits for the given duration. A test replaces retrySleepFn to keep the
+// retry path fast; an engine built without one falls back to time.Sleep.
+func (engine *ChartRenderingEngine) sleep(d time.Duration) {
+	if engine.retrySleepFn != nil {
+		engine.retrySleepFn(d)
+		return
+	}
+	time.Sleep(d)
+}
+
+// isTransientHelmError returns true if the command output indicates a failure
+// that can resolve on retry, such as a reset connection or a 5xx answer from
+// the chart repository. The test is the opposite of the one the Docker engine
+// makes: most helm template failures are permanent (a bad value, a broken
+// template, a missing chart version), so this list names what to retry instead
+// of what to give up on.
+func isTransientHelmError(output []byte) bool {
+	s := strings.ToLower(string(output))
+	for _, pattern := range []string{
+		"connection reset by peer",
+		"connection refused",
+		"broken pipe",
+		"unexpected eof",
+		"i/o timeout",
+		"context deadline exceeded",
+		"client.timeout",
+		"tls handshake",
+		"network is unreachable",
+		"no route to host",
+		"temporary failure in name resolution",
+		"server misbehaving",
+		"no such host",
+		"too many requests",
+		"429 ",
+		"500 internal server error",
+		"502 bad gateway",
+		"503 service unavailable",
+		"504 gateway",
+	} {
+		if strings.Contains(s, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 func isOCIRepo(repoURL string) bool {

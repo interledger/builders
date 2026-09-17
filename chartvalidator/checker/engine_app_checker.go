@@ -41,14 +41,15 @@ func NewAppCheckerEngine(context context.Context, outputDir string, apiVersions 
 	errorChan := make(chan ErrorResult)
 
 	cre := ChartRenderingEngine{
-		inputChan:   make(chan ChartRenderParams),
-		resultChan:  make(chan RenderResult),
-		errorChan:   errorChan,
-		outputDir:   outputDir,
-		context:     context,
-		executor:    &RealCommandExecutor{},
-		name:        "ChartRenderer",
-		apiVersions: apiVersions,
+		inputChan:    make(chan ChartRenderParams),
+		resultChan:   make(chan RenderResult),
+		errorChan:    errorChan,
+		outputDir:    outputDir,
+		context:      context,
+		executor:     &RealCommandExecutor{},
+		name:         "ChartRenderer",
+		retrySleepFn: time.Sleep,
+		apiVersions:  apiVersions,
 	}
 
 	// Construct absolute path to schemas directory
