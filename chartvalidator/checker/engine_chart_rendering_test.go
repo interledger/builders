@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -11,12 +13,13 @@ import (
 // Helper function to create and start a chart rendering engine
 func createEngine(mockExecutor *MockCommandExecutor, includeErrorChan bool) *ChartRenderingEngine {
 	engine := &ChartRenderingEngine{
-		inputChan:   make(chan ChartRenderParams),
-		resultChan:  make(chan RenderResult),
-		outputDir:   "test_output",
-		context:     context.Background(),
-		executor:    mockExecutor,
-		apiVersions: []string{"something", "something-else"},
+		inputChan:    make(chan ChartRenderParams),
+		resultChan:   make(chan RenderResult),
+		outputDir:    "test_output",
+		context:      context.Background(),
+		executor:     mockExecutor,
+		retrySleepFn: func(time.Duration) {},
+		apiVersions:  []string{"something", "something-else"},
 	}
 
 	if includeErrorChan {
@@ -135,4 +138,87 @@ func TestRenderBaseFileNotExist(t *testing.T) {
 	assert.Equal(t, errorResult.Chart.ChartName, testChart.ChartName)
 	assert.NotNil(t, errorResult.Error)
 	assert.Contains(t, errorResult.Error.Error(), "base values file does not exist")
+}
+
+// The real message helm prints when GitHub Pages resets the connection while
+// the repository index downloads.
+const helmResetOutput = `Error: looks like "https://interledger.github.io/charts/interledger" is not a valid chart repository or cannot be reached: Get "https://interledger.github.io/charts/interledger/index.yaml": read tcp 172.18.0.2:49324->185.199.108.153:443: read: connection reset by peer`
+
+func TestRenderRetriesTransientError(t *testing.T) {
+	callCount := 0
+	mockExecutor := createMockExecutorWithBehavior(func() error {
+		callCount++
+		if callCount < 3 {
+			return fmt.Errorf("exit status 1")
+		}
+		return nil
+	})
+	mockExecutor.Output = []byte(helmResetOutput)
+
+	engine := createEngine(mockExecutor, true)
+	defer cleanupEngine(engine)
+
+	engine.inputChan <- createTestChart()
+
+	result := <-engine.resultChan
+	assert.Equal(t, "test-chart", result.Chart.ChartName)
+	assert.Equal(t, 3, callCount, "expected 3 attempts (2 failures then 1 success)")
+}
+
+func TestRenderRetriesExhausted(t *testing.T) {
+	callCount := 0
+	mockExecutor := createMockExecutorWithBehavior(func() error {
+		callCount++
+		return fmt.Errorf("exit status 1")
+	})
+	mockExecutor.Output = []byte(helmResetOutput)
+
+	engine := createEngine(mockExecutor, true)
+	defer cleanupEngine(engine)
+
+	engine.inputChan <- createTestChart()
+
+	errResult := <-engine.errorChan
+	assert.NotNil(t, errResult.Error)
+	assert.Equal(t, 4, callCount, "expected 4 attempts (1 initial + 3 retries)")
+}
+
+func TestRenderDoesNotRetryPermanentError(t *testing.T) {
+	callCount := 0
+	mockExecutor := createMockExecutorWithBehavior(func() error {
+		callCount++
+		return fmt.Errorf("exit status 1")
+	})
+	mockExecutor.Output = []byte(`Error: chart "rafiki" version "3.2.0" not found in https://interledger.github.io/charts/interledger repository`)
+
+	engine := createEngine(mockExecutor, true)
+	defer cleanupEngine(engine)
+
+	engine.inputChan <- createTestChart()
+
+	errResult := <-engine.errorChan
+	assert.NotNil(t, errResult.Error)
+	assert.Equal(t, 1, callCount, "a missing chart version must not be retried")
+}
+
+func TestIsTransientHelmError(t *testing.T) {
+	transient := []string{
+		helmResetOutput,
+		`Get "https://example.com/index.yaml": net/http: TLS handshake timeout`,
+		`Get "https://example.com/index.yaml": dial tcp: i/o timeout`,
+		"Error: failed to fetch https://example.com/index.yaml : 503 Service Unavailable",
+	}
+	for _, output := range transient {
+		assert.True(t, isTransientHelmError([]byte(output)), "expected transient: %s", output)
+	}
+
+	permanent := []string{
+		`Error: chart "rafiki" version "3.2.0" not found`,
+		"Error: execution error at (rafiki/templates/deployment.yaml:12:3): image tag is required",
+		"Error: unauthorized",
+		"Error: YAML parse error on rafiki/values.yaml",
+	}
+	for _, output := range permanent {
+		assert.False(t, isTransientHelmError([]byte(output)), "expected permanent: %s", output)
+	}
 }
